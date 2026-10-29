@@ -112,6 +112,7 @@ async def test_group_changes_preserve_storage_and_schedule_progress(runtime: Run
     runtime.scheduler.modify_job('42', jobstore='sqlalchemy', next_run_time=previous_time)
     async with runtime.sessions() as db:
         await JobService.edit_job_services(db, EditJobModel(jobId=42, jobGroup='财务', coalesce=True))
+    await SchedulerManager._sync_jobs_from_database({42})
     current = runtime.scheduler.get_job('42', jobstore='sqlalchemy')
     assert current.next_run_time == previous_time
     assert current.trigger.task_job_group == '财务'
@@ -119,6 +120,7 @@ async def test_group_changes_preserve_storage_and_schedule_progress(runtime: Run
     assert runtime.scheduler.get_job('42', jobstore='default') is None
     async with runtime.sessions() as db:
         await JobService.edit_job_services(db, EditJobModel(jobId=42, jobStore='default'))
+    await SchedulerManager._sync_jobs_from_database({42})
     current = runtime.scheduler.get_job('42', jobstore='default')
     assert current.next_run_time == previous_time
     assert current.trigger.task_job_group == '财务'
@@ -159,7 +161,7 @@ async def test_actual_schedule_is_observed_from_leader_and_separate_from_preview
     actual = TimezoneUtil.utc_now() + timedelta(minutes=2)
     actual = actual.replace(microsecond=actual.microsecond // 1000 * 1000)
     runtime.scheduler.modify_job('42', next_run_time=actual)
-    await SchedulerManager._dispatcher.refresh_observations(is_leader=SchedulerManager.is_application_leader)
+    await SchedulerManager._dispatcher.refresh_observations(is_leader=SchedulerManager.is_scheduler_leader)
     monkeypatch.setattr(SchedulerManager, '_is_leader', False)
     async with runtime.sessions() as db:
         result = await JobService.job_detail_services(db, 42)
@@ -176,7 +178,11 @@ async def test_actual_schedule_is_observed_from_leader_and_separate_from_preview
     monkeypatch.setattr(SchedulerManager, '_is_leader', True)
     async with runtime.sessions() as db:
         await JobService.edit_job_services(db, EditJobModel(jobId=42, status='1', type='status'))
+    await SchedulerManager._sync_jobs_from_database({42})
+    async with runtime.sessions() as db:
         disabled = await JobService.job_detail_services(db, 42)
+    assert disabled.sync_status == 'applied'
+    assert runtime.scheduler.get_job('42') is None
     assert disabled.next_run_time is None
     assert disabled.cron_next_time is not None
 

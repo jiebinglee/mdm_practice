@@ -46,6 +46,20 @@ class JobCommandController:
         self.operations_runtime = operations_runtime or OPERATIONS_RUNTIME
         self.job_runtime = job_runtime or JOB_RUNTIME
 
+    def worker(self, env: str) -> None:
+        """
+        准备配置后接管前台进程，独立运行调度 Worker。
+
+        :param env: 当前命令运行环境
+        :return: None
+        """
+        # 复用上下文构建器加载环境，但不应用普通短命令的日志静默策略。
+        self.context_factory.cli_context_builder.build(env, 'text', False, False, False)
+
+        from config.scheduler.worker import run_worker  # noqa: PLC0415 - 仅执行 worker 命令时加载调度运行时
+
+        run_worker()
+
     def list(
         self,
         env: str,

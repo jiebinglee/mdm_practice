@@ -6,11 +6,11 @@ from fastapi import FastAPI
 
 from common.constant import LockConstant
 from common.router import auto_register_routers
+from config.application_leader import ApplicationLeaderCoordinator
 from config.database import DataSourceRegistry
 from config.env import AppConfig
 from config.get_redis import RedisUtil
 from config.lifecycle import init_create_table
-from config.scheduler.manager import SchedulerManager
 from exceptions.handle import handle_exception
 from middlewares.handle import handle_middleware
 from module_admin.service.log_service import LogAggregatorService
@@ -30,7 +30,7 @@ async def _start_background_tasks(app: FastAPI) -> None:
     :param app: FastAPI对象
     :return: None
     """
-    await SchedulerManager.init_system_scheduler(app.state.redis)
+    await ApplicationLeaderCoordinator.init_application_leader(app.state.redis)
     app.state.log_aggregator_task = asyncio.create_task(LogAggregatorService.consume_stream(app.state.redis))
     await OidcRuntimeService.start_background_tasks(app)
 
@@ -56,8 +56,8 @@ async def _stop_background_tasks(app: FastAPI) -> None:
             redis = getattr(app.state, 'redis', None)
             if redis is not None:
                 try:
-                    # Scheduler负责停止续期并释放Application租约，必须先于Redis连接池关闭。
-                    await SchedulerManager.close_system_scheduler()
+                    # 应用租约独立于调度进程，必须先于 Redis 连接池关闭。
+                    await ApplicationLeaderCoordinator.close()
                 finally:
                     await RedisUtil.close_redis_pool(app)
         finally:
@@ -188,7 +188,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.plugin_application_runtime_started = False
     try:
         app.state.redis = await RedisUtil.create_redis_pool(log_enabled=False)
-        application_lock_owner_token = SchedulerManager.get_application_lock_owner_token()
+        application_lock_owner_token = ApplicationLeaderCoordinator.get_application_lock_owner_token()
         application_leader = await StartupUtil.acquire_application_leader(
             redis=app.state.redis,
             lock_key=LockConstant.APP_STARTUP_LOCK_KEY,
@@ -200,7 +200,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
         # 获取锁成功后立即启动锁续期任务，避免初始化时间过长导致锁过期
         if application_leader:
-            SchedulerManager.start_application_lock_renewal(app.state.redis)
+            ApplicationLeaderCoordinator.start_application_lock_renewal(app.state.redis)
 
         startup_logger = logger.bind(
             startup_phase='application_startup',
@@ -217,7 +217,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await _initialize_application_runtime(app, application_leader=application_leader)
 
         # 初始化期间可能因续期失败失去租约；此时不得继续输出leader专属成功摘要。
-        application_leader = application_leader and SchedulerManager.is_application_leader()
+        application_leader = application_leader and ApplicationLeaderCoordinator.is_application_leader()
         app.state.application_leader = application_leader
         if application_leader:
             # 短暂等待确保下面的启动日志在最后打印

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from apscheduler.util import obj_to_ref, ref_to_obj
 
-from config.env import DataBaseConfig
+from config.env import DataBaseConfig, SchedulerConfig
 from config.scheduler.manager import SchedulerManager
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -25,10 +25,29 @@ def test_scheduler_database_engines_keep_jobstore_logging_isolated(monkeypatch: 
     monkeypatch.setattr('config.scheduler.resources.create_sync_db_engine', create_engine)
     monkeypatch.setattr('config.scheduler.resources.DataSourceRegistry.get_sync_engine', lambda _name: listener_engine)
 
+    source = DataBaseConfig.get_source()
+    original_config = source.model_dump()
     assert SchedulerManager._resources.jobstore_engine() is jobstore_engine
     assert SchedulerManager._resources.listener_engine() is listener_engine
     assert jobstore_engine is not listener_engine
-    create_engine.assert_called_once_with(echo=False, config=DataBaseConfig.get_source())
+    create_engine.assert_called_once()
+    assert create_engine.call_args.args == ()
+    kwargs = create_engine.call_args.kwargs
+    assert kwargs['echo'] is False
+    copied_source = kwargs['config']
+    assert copied_source is not source
+    assert source.model_dump() == original_config
+    timeout_fields = {'db_connect_timeout', 'db_pool_timeout'}
+    assert copied_source.model_dump(exclude=timeout_fields) == source.model_dump(exclude=timeout_fields)
+    timeout = SchedulerConfig.scheduler_io_timeout_seconds
+    assert 0 < copied_source.db_connect_timeout <= timeout
+    assert 0 < copied_source.db_pool_timeout <= timeout
+    if source.db_type == 'postgresql':
+        assert kwargs['connect_args'] == {
+            'options': f'-c timezone=UTC -c statement_timeout={max(1, int(timeout * 1000))}'
+        }
+    else:
+        assert kwargs['connect_args'] == {'read_timeout': timeout, 'write_timeout': timeout}
 
 
 def test_scheduler_cleanup_does_not_dispose_registry_listener_engine(monkeypatch: pytest.MonkeyPatch) -> None:

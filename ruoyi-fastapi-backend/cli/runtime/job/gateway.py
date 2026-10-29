@@ -6,7 +6,7 @@ class JobInfrastructureGateway:
     """
     定时任务基础设施网关。
 
-    该对象负责延迟加载数据库会话、Redis、调度器和任务服务依赖，
+    该对象负责延迟加载数据库会话、调度命令客户端和任务服务依赖，
     供定时任务运行时 facade 与其协作对象统一复用。
     """
 
@@ -29,22 +29,13 @@ class JobInfrastructureGateway:
         return import_module('config.database').DataSourceRegistry.session
 
     @staticmethod
-    def get_redis_util() -> Any:
+    def get_scheduler_client() -> Any:
         """
-        获取 Redis 工具类。
+        获取无调度器生命周期的命令客户端。
 
-        :return: Redis 工具类
+        :return: 调度命令客户端类
         """
-        return import_module('config.get_redis').RedisUtil
-
-    @staticmethod
-    def get_scheduler_manager() -> Any:
-        """
-        获取调度器管理类。
-
-        :return: 调度器管理类
-        """
-        return import_module('config.scheduler.manager').SchedulerManager
+        return import_module('config.scheduler.client').SchedulerCommandClient
 
     @staticmethod
     def get_job_vo_module() -> Any:

@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from common.constant import CommonConstant
 from common.vo import CrudResponseModel, PageModel
+from config.scheduler.client import SchedulerCommandClient
 from config.scheduler.job_adapter import JobAdapter
-from config.scheduler.manager import SchedulerManager
 from exceptions.exception import ServiceException
 from module_admin.dao.job_dao import JobDao
 from module_admin.dao.job_runtime_dao import JobRuntimeDao
@@ -50,7 +50,7 @@ class JobService:
         try:
             if check_target_permission:
                 JobAdapter.validate_allowed_target(job.invoke_target)
-            SchedulerManager._prepare_scheduler_job_add(job)
+            JobAdapter.prepare(job)
         except Exception as exc:
             raise ServiceException(message=f'任务配置无效：{exc}') from exc
         return job
@@ -66,10 +66,10 @@ class JobService:
         """
         job_ids = {state['jobId'] for state in states}
         try:
-            sync = await SchedulerManager.request_scheduler_sync(job_ids, immediate=True)
+            sync = await SchedulerCommandClient.request_scheduler_sync(job_ids)
         except Exception as exc:
             logger.exception('任务修改已提交，同步请求失败')
-            sync = {'syncStatus': 'failed', 'syncError': str(exc)[:2000], 'jobs': []}
+            sync = {'syncStatus': 'pending', 'notificationError': str(exc)[:2000], 'jobs': []}
         results = {state['jobId']: state for state in states}
         for result in sync['jobs']:
             results[result['jobId']] = {**results.get(result['jobId'], {}), **result}
@@ -250,7 +250,7 @@ class JobService:
         except Exception:
             await query_db.rollback()
             raise
-        await SchedulerManager.request_execution_dispatch()
+        await SchedulerCommandClient.request_execution_dispatch()
         return CrudResponseModel(is_success=True, message='已提交执行，请查看执行记录', result=result)
 
     @classmethod

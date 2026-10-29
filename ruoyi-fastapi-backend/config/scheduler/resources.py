@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session, sessionmaker
 
 from config.database import DataSourceRegistry, create_sync_db_engine
-from config.env import DataBaseConfig, RedisConfig
+from config.env import DataBaseConfig, RedisConfig, SchedulerConfig
 from config.scheduler.executors import TimedAsyncIOExecutor, TimedProcessPoolExecutor
 
 redis_config = {
@@ -21,6 +21,8 @@ redis_config = {
     'username': RedisConfig.redis_username,
     'password': RedisConfig.redis_password,
     'db': RedisConfig.redis_database,
+    'socket_connect_timeout': SchedulerConfig.scheduler_io_timeout_seconds,
+    'socket_timeout': SchedulerConfig.scheduler_io_timeout_seconds,
 }
 job_defaults = {'coalesce': False, 'max_instances': 1}
 
@@ -50,7 +52,16 @@ class SchedulerResources:
         """
         if self._jobstore_engine is None:
             # JobStore 使用独立 Engine，避免 APScheduler 关闭时释放 Registry 共享的 Engine。
-            self._jobstore_engine = create_sync_db_engine(echo=False, config=DataBaseConfig.get_source())
+            timeout = SchedulerConfig.scheduler_io_timeout_seconds
+            source = DataBaseConfig.get_source().model_copy(update={
+                'db_connect_timeout': max(1, int(timeout)),
+                'db_pool_timeout': max(1, int(timeout)),
+            })
+            if source.db_type == 'postgresql':
+                connect_args = {'options': f'-c timezone=UTC -c statement_timeout={max(1, int(timeout * 1000))}'}
+            else:
+                connect_args = {'read_timeout': timeout, 'write_timeout': timeout}
+            self._jobstore_engine = create_sync_db_engine(echo=False, config=source, connect_args=connect_args)
         return self._jobstore_engine
 
     def listener_engine(self) -> Engine:

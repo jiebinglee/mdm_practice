@@ -29,11 +29,40 @@ services:
       RUOYI_PLUGIN_FRONTEND_FRAMEWORK: ${FRONTEND_FRAMEWORK:-vue3}
     ports:
       - "19099:9099"
+    volumes:
+      # UploadConfig 的上传、私有文件、回收站、隔离区与下载均位于 vf_admin 下。
+      - ./ruoyi-fastapi-backend/vf_admin:/app/vf_admin
     depends_on:
       ruoyi-pg:
         condition: service_healthy
       ruoyi-redis:
         condition: service_healthy
+    networks:
+      - ruoyi-network
+
+  # 独立调度进程：复用后端镜像与文件存储，不监听 Web 端口。
+  ruoyi-scheduler-pg:
+    build:
+      context: ./ruoyi-fastapi-backend
+      dockerfile: Dockerfile.pg
+    image: ruoyi-backend-pg:latest
+    container_name: ruoyi-scheduler-pg
+    command: ["ruoyi", "job", "worker", "--env=dockerpg"]
+    environment:
+      TZ: UTC
+      RUOYI_PLUGIN_FRONTEND_FRAMEWORK: ${FRONTEND_FRAMEWORK:-vue3}
+    volumes:
+      - ./ruoyi-fastapi-backend/vf_admin:/app/vf_admin
+    restart: unless-stopped
+    stop_grace_period: 25s
+    depends_on:
+      ruoyi-pg:
+        condition: service_healthy
+      ruoyi-redis:
+        condition: service_healthy
+      # 仅保证 Web 容器已启动，不代表表结构初始化或 HTTP 就绪。
+      ruoyi-backend-pg:
+        condition: service_started
     networks:
       - ruoyi-network
 

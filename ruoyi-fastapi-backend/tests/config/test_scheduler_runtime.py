@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import func, select, update
 
+from config.scheduler.client import SchedulerCommandClient
 from config.scheduler.manager import SchedulerManager
 from exceptions.exception import ServiceException
 from module_admin.dao.job_dao import JobDao
@@ -53,7 +54,13 @@ async def test_registration_error_is_saved_and_can_be_retried(
         result = await JobService.add_job_services(db, job_info())
     state = result.result['jobs'][0]
     assert result.result['saved'] is True
-    assert result.result['syncStatus'] == 'failed'
+    assert result.result['syncStatus'] == 'pending'
+    assert state['appliedVersion'] == 0
+    assert state['syncError'] is None
+    assert runtime.scheduler.get_job(str(state['jobId'])) is None
+    synced = await SchedulerManager._sync_jobs_from_database({state['jobId']})
+    assert synced['syncStatus'] == 'failed'
+    state = synced['jobs'][0]
     assert state['appliedVersion'] == 0
     assert 'store offline' in state['syncError']
     async with runtime.sessions() as db:
@@ -62,7 +69,11 @@ async def test_registration_error_is_saved_and_can_be_retried(
     monkeypatch.setattr(runtime.scheduler, 'add_job', original_add)
     async with runtime.sessions() as db:
         result = await JobService.retry_sync_services(db, state['jobId'])
-    assert result.result['syncStatus'] == 'applied'
+    assert result.result['syncStatus'] == 'pending'
+    synced = await SchedulerManager._sync_jobs_from_database({state['jobId']})
+    assert synced['syncStatus'] == 'applied'
+    assert synced['jobs'][0]['configVersion'] == synced['jobs'][0]['appliedVersion']
+    assert synced['jobs'][0]['syncError'] is None
     assert runtime.scheduler.get_job(str(state['jobId'])) is not None
 
 
@@ -84,8 +95,13 @@ async def test_edit_is_targeted_and_invalid_edit_preserves_both_states(
     assert runtime.scheduler.get_job('42') is original
     async with runtime.sessions() as db:
         result = await JobService.edit_job_services(db, EditJobModel(jobId=42, timeZone='Asia/Shanghai'))
+    assert result.result['syncStatus'] == 'pending'
     assert result.result['jobs'][0]['configVersion'] == UPDATED_CONFIG_VERSION
-    assert result.result['jobs'][0]['appliedVersion'] == UPDATED_CONFIG_VERSION
+    assert result.result['jobs'][0]['appliedVersion'] == UPDATED_CONFIG_VERSION - 1
+    assert runtime.scheduler.get_job('42') is original
+    synced = await SchedulerManager._sync_jobs_from_database({42})
+    assert synced['syncStatus'] == 'applied'
+    assert synced['jobs'][0]['appliedVersion'] == UPDATED_CONFIG_VERSION
     assert str(runtime.scheduler.get_job('42').trigger.timezone) == 'Asia/Shanghai'
     assert runtime.scheduler.get_job('43') is unrelated
     assert job.time_zone == 'America/New_York'
@@ -127,6 +143,8 @@ async def test_manual_request_survives_sync_without_changing_cron(runtime: Runti
         submitted = await JobService.execute_job_once_services(db, job, requested_by='tester')
     execution_id = submitted.result['executionId']
     assert submitted.result['status'] == 'pending'
+    assert runtime.scheduler.get_job(f'_manual:{execution_id}') is None
+    await SchedulerManager._drain_execution_requests()
     assert runtime.scheduler.get_job(f'_manual:{execution_id}') is not None
     await SchedulerManager._sync_jobs_from_database()
     assert runtime.scheduler.get_job('42') is original
@@ -168,7 +186,7 @@ async def test_lost_notification_is_recovered_and_duplicate_wakeup_does_not_repe
 ) -> None:
     job = await runtime.save()
     monkeypatch.setattr(SchedulerManager, '_is_leader', False)
-    SchedulerManager._redis.publish.side_effect = RuntimeError('offline')
+    monkeypatch.setattr(SchedulerCommandClient, '_notify', AsyncMock(return_value=False))
     async with runtime.sessions() as db:
         pending = await JobService.execute_job_once_services(db, job)
     assert runtime.scheduler.get_jobs() == []
@@ -188,10 +206,15 @@ async def test_delete_cancels_unstarted_requests_and_keeps_queryable_tombstone(r
     job = await runtime.save()
     async with runtime.sessions() as db:
         submitted = await JobService.execute_job_once_services(db, job)
+    await SchedulerManager._drain_execution_requests()
+    assert runtime.scheduler.get_job(f'_manual:{submitted.result["executionId"]}') is not None
     async with runtime.sessions() as db:
         result = await JobService.delete_job_services(db, DeleteJobModel(jobIds='42'))
     assert result.result['jobs'][0]['deleted'] is True
-    assert result.result['syncStatus'] == 'applied'
+    assert result.result['syncStatus'] == 'pending'
+    synced = await SchedulerManager._sync_jobs_from_database({42})
+    assert synced['syncStatus'] == 'applied'
+    assert synced['jobs'][0]['deleted'] is True
     runtime.scheduler.resume()
     state = await runtime.wait_execution(submitted.result['executionId'], {'cancelled'})
     assert state['startTime'] is None
@@ -249,28 +272,41 @@ async def test_overlapping_edits_and_late_notifications_apply_latest_version(
     await SchedulerManager._sync_jobs_from_database()
     committed_ids = []
     both_committed = asyncio.Event()
-    sync = SchedulerManager.request_scheduler_sync
+    sync = SchedulerCommandClient.request_scheduler_sync
 
-    async def delayed_notification(job_ids: set[int], *, immediate: bool) -> dict:
+    async def delayed_notification(job_ids: set[int] | None = None) -> dict:
         committed_ids.append(job_ids)
         if len(committed_ids) == UPDATED_CONFIG_VERSION:
             both_committed.set()
         await asyncio.wait_for(both_committed.wait(), timeout=5)
-        return await sync(job_ids, immediate=immediate)
+        return await sync(job_ids)
 
     async def edit(change: dict) -> dict:
         async with runtime.sessions() as db:
             return (await JobService.edit_job_services(db, EditJobModel(jobId=42, **change))).result
 
-    monkeypatch.setattr(SchedulerManager, 'request_scheduler_sync', delayed_notification)
+    monkeypatch.setattr(SchedulerCommandClient, 'request_scheduler_sync', delayed_notification)
     results = await asyncio.gather(edit({'timeZone': 'UTC'}), edit({'jobName': 'changed name'}))
+    assert committed_ids == [{42}, {42}]
+    assert {result['jobs'][0]['configVersion'] for result in results} == {
+        UPDATED_CONFIG_VERSION,
+        TWICE_UPDATED_CONFIG_VERSION,
+    }
     for result in results:
         state = result['jobs'][0]
-        assert state['configVersion'] == state['appliedVersion'] == TWICE_UPDATED_CONFIG_VERSION
+        assert result['syncStatus'] == state['syncStatus'] == 'pending'
+        assert state['appliedVersion'] == UPDATED_CONFIG_VERSION - 1
+    synced = await SchedulerManager._sync_jobs_from_database({42})
+    assert synced['syncStatus'] == 'applied'
+    state = synced['jobs'][0]
+    assert state['configVersion'] == state['appliedVersion'] == TWICE_UPDATED_CONFIG_VERSION
     current = runtime.scheduler.get_job('42')
     assert current.name == 'changed name'
     assert str(current.trigger.timezone) == 'UTC'
-    await sync({42}, immediate=True)
+    late = await sync({42})
+    assert late['syncStatus'] == 'pending'
+    assert runtime.scheduler.get_job('42') is current
+    await SchedulerManager._sync_jobs_from_database({42})
     assert runtime.scheduler.get_job('42') is current
 
 
@@ -288,10 +324,18 @@ async def test_deleted_configuration_remains_retryable_when_removal_fails(
     async with runtime.sessions() as db:
         result = await JobService.delete_job_services(db, DeleteJobModel(jobIds='42'))
     assert result.result['saved']
-    assert result.result['syncStatus'] == 'failed'
+    assert result.result['syncStatus'] == 'pending'
     assert result.result['jobs'][0]['deleted']
+    synced = await SchedulerManager._sync_jobs_from_database({42})
+    assert synced['syncStatus'] == 'failed'
+    assert synced['jobs'][0]['deleted']
+    assert 'store offline' in synced['jobs'][0]['syncError']
+    assert runtime.scheduler.get_job('42') is not None
     monkeypatch.setattr(runtime.scheduler, 'remove_job', remove)
     async with runtime.sessions() as db:
         retried = await JobService.retry_sync_services(db, 42)
-    assert retried.result['syncStatus'] == 'applied'
+    assert retried.result['syncStatus'] == 'pending'
+    synced = await SchedulerManager._sync_jobs_from_database({42})
+    assert synced['syncStatus'] == 'applied'
+    assert synced['jobs'][0]['deleted']
     assert runtime.scheduler.get_job('42') is None

@@ -1,8 +1,11 @@
+import builtins
 import socket
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from cli.exit_codes import SCHEDULER_ERROR
 from cli.runtime.ops import OperationsRuntimeService
 from cli.runtime.ops.gateway import OperationsInfrastructureGateway
 from cli.runtime.ops.support import OperationsDependencyInspector, OperationsServerInfoSupport
@@ -74,94 +77,80 @@ def test_operations_server_info_support_resolves_non_loopback_ip(monkeypatch: py
     assert resolved_ip == '192.168.1.8'
 
 
-@pytest.mark.asyncio
-async def test_operations_runtime_service_sync_jobs_closes_resources_on_success() -> None:
-    """
-    校验运维运行时在同步调度成功后会关闭调度器和 Redis 资源。
-
-    :return: None
-    """
-    close_events: list[str] = []
-
-    class FakeRedis:
-        """
-        模拟 Redis 客户端。
-        """
-
-        @staticmethod
-        async def close() -> None:
-            """
-            记录关闭事件。
-
-            :return: None
-            """
-            close_events.append('redis')
-
-    class FakeRedisUtil:
-        """
-        模拟 Redis 工具。
-        """
-
-        @staticmethod
-        async def create_redis_pool(*, log_enabled: bool = False) -> FakeRedis:
-            """
-            返回模拟 Redis 客户端。
-
-            :param log_enabled: 是否启用日志
-            :return: 模拟 Redis 客户端
-            """
-            del log_enabled
-            return FakeRedis()
-
-    class FakeSchedulerManager:
-        """
-        模拟调度器管理类。
-        """
-
-        _is_leader = True
-
-        @staticmethod
-        async def init_system_scheduler(redis: FakeRedis) -> None:
-            """
-            初始化调度器。
-
-            :param redis: Redis 客户端
-            :return: None
-            """
-            assert isinstance(redis, FakeRedis)
-
-        @staticmethod
-        async def request_scheduler_sync() -> None:
-            """
-            发送调度同步请求。
-
-            :return: None
-            """
-
-        @staticmethod
-        async def close_system_scheduler() -> None:
-            """
-            记录调度器关闭事件。
-
-            :return: None
-            """
-            close_events.append('scheduler')
-
+def test_operations_gateway_loads_only_notification_client_lazily(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = object()
+    load_module = MagicMock(return_value=SimpleNamespace(SchedulerCommandClient=client))
+    monkeypatch.setattr('cli.runtime.ops.gateway.import_module', load_module)
     gateway = OperationsInfrastructureGateway()
+
+    load_module.assert_not_called()
+    assert gateway.get_scheduler_client() is client
+    load_module.assert_called_once_with('config.scheduler.client')
+    assert not hasattr(gateway, 'get_scheduler_manager')
+
+
+@pytest.fixture
+def forbid_scheduler_runtime_imports(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_import = builtins.__import__
+
+    def guarded_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == 'config.scheduler' or name.startswith('config.scheduler.'):
+            raise AssertionError(f'同步通知不得导入调度运行时：{name}')
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, '__import__', guarded_import)
+    monkeypatch.setattr(
+        'cli.runtime.ops.gateway.import_module',
+        MagicMock(side_effect=AssertionError('同步通知只能使用已注入的客户端')),
+    )
+
+
+@pytest.mark.asyncio
+async def test_sync_jobs_returns_pending_without_starting_or_closing_scheduler(
+    forbid_scheduler_runtime_imports: None,
+) -> None:
+    del forbid_scheduler_runtime_imports
+    pending = {'syncStatus': 'pending', 'jobs': []}
+    # spec_set 保证 CLI 只能请求通知，不可绑定资源或控制调度器生命周期。
+    client = MagicMock(spec_set=['request_scheduler_sync', 'request_execution_dispatch'])
+    client.request_scheduler_sync = AsyncMock(return_value=pending)
+    gateway = MagicMock(spec_set=OperationsInfrastructureGateway)
+    gateway.get_scheduler_client.return_value = client
     service = OperationsRuntimeService(infrastructure_gateway=gateway)
-
-    def _fake_get_redis_util() -> FakeRedisUtil:
-        return FakeRedisUtil()
-
-    def _fake_get_scheduler_manager() -> FakeSchedulerManager:
-        return FakeSchedulerManager()
-
-    object.__setattr__(gateway, 'get_redis_util', _fake_get_redis_util)
-    object.__setattr__(gateway, 'get_scheduler_manager', _fake_get_scheduler_manager)
 
     payload = await service.sync_jobs()
 
     assert payload['ok'] is True
     assert payload['schedulerSyncRequested'] is True
-    assert payload['isLeader'] is True
-    assert close_events == ['scheduler', 'redis']
+    assert payload['operation'] == 'sync'
+    assert payload['operationLabel'] == '同步调度配置'
+    assert payload['result'] == pending
+    assert '等待 Worker 应用' in payload['message']
+    assert '不保证送达' in payload['message']
+    assert 'isLeader' not in payload
+    client.request_scheduler_sync.assert_awaited_once_with()
+    client.request_execution_dispatch.assert_not_called()
+    gateway.get_redis_util.assert_not_called()
+    gateway.get_scheduler_client.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_sync_jobs_reports_client_failure_without_opening_resources(
+    forbid_scheduler_runtime_imports: None,
+) -> None:
+    del forbid_scheduler_runtime_imports
+    client = MagicMock(spec_set=['request_scheduler_sync'])
+    client.request_scheduler_sync = AsyncMock(side_effect=RuntimeError('client unavailable'))
+    gateway = MagicMock(spec_set=OperationsInfrastructureGateway)
+    gateway.get_scheduler_client.return_value = client
+    service = OperationsRuntimeService(infrastructure_gateway=gateway)
+
+    payload = await service.sync_jobs()
+
+    assert payload['ok'] is False
+    assert payload['schedulerSyncRequested'] is False
+    assert payload['error'] == 'client unavailable'
+    assert payload['exit_code'] == SCHEDULER_ERROR
+    assert 'isLeader' not in payload
+    client.request_scheduler_sync.assert_awaited_once_with()
+    gateway.get_redis_util.assert_not_called()

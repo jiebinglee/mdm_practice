@@ -18,6 +18,7 @@ from apscheduler.util import iscoroutinefunction_partial
 
 from config.scheduler.events import JobSnapshot, TimedJobExecutionEvent
 from config.scheduler.job_execution import ExecutionHeartbeat, JobExecutionStore
+from config.scheduler.lease import owns_scheduler_lease
 from utils.time_util import TimezoneUtil
 
 
@@ -95,6 +96,8 @@ def _claim_execution(event: TimedJobExecutionEvent) -> str | None:
     """
     snapshot = event.snapshot
     try:
+        if snapshot.scheduler_owner and not owns_scheduler_lease(snapshot.scheduler_owner):
+            raise RuntimeError('调度租约已失效，取消尚未开始的执行')
         claim = JobExecutionStore.claim(
             event.execution_id,
             snapshot.job_id,
@@ -108,6 +111,15 @@ def _claim_execution(event: TimedJobExecutionEvent) -> str | None:
         event.exception = RuntimeError(f'无法确认任务执行占用，本次未调用：{exc}')
         return None
     if claim.accepted:
+        try:
+            if snapshot.scheduler_owner and not owns_scheduler_lease(snapshot.scheduler_owner):
+                raise RuntimeError('领取执行后调度租约失效，未调用业务函数')
+        except Exception as exc:
+            event.code = EVENT_JOB_ERROR
+            event.execution_status = 'failed'
+            event.exception = exc
+            _finish_execution(event, claim.token)
+            return None
         return claim.token
     event.code = EVENT_JOB_MAX_INSTANCES if claim.status == 'rejected' else EVENT_JOB_ERROR
     event.execution_status = claim.status
@@ -271,6 +283,9 @@ class JobSubmission:
         :return: None
         """
         try:
+            can_submit = getattr(job._scheduler, '_worker_can_submit', None)
+            if can_submit is not None and not can_submit():
+                return
             submit(job, run_times)
         except MaxInstancesReachedError:
             if self._on_rejected is not None or self.manage_executions:
@@ -310,6 +325,7 @@ class TimedAsyncIOExecutor(AsyncIOExecutor):
         """
         super().__init__(*args, **kwargs)
         self._submission = JobSubmission(on_rejected, manage_executions)
+        self._pending_futures: set[Future] = set()
 
     def submit_job(self, job: Job, run_times: list[datetime]) -> None:
         """
@@ -377,6 +393,7 @@ class TimedProcessPoolExecutor(ProcessPoolExecutor):
         """
         super().__init__(*args, **kwargs)
         self._submission = JobSubmission(on_rejected, manage_executions)
+        self._pending_futures: set[Future] = set()
 
     def submit_job(self, job: Job, run_times: list[datetime]) -> None:
         """
@@ -405,6 +422,9 @@ class TimedProcessPoolExecutor(ProcessPoolExecutor):
             :param future: 任务执行产生的Future对象
             :return: None
             """
+            self._pending_futures.discard(future)
+            if future.cancelled():
+                return
             exc = future.exception()
             if exc:
                 self._run_job_error(job.id, exc, exc.__traceback__)
@@ -417,4 +437,5 @@ class TimedProcessPoolExecutor(ProcessPoolExecutor):
             self._logger.warning('⚠️ 进程池异常，正在重建进程池')
             self._pool = self._pool.__class__(self._pool._max_workers, **self.pool_kwargs)
             future = self._pool.submit(run_timed_job, job, run_times, snapshot, self._logger.name)
+        self._pending_futures.add(future)
         future.add_done_callback(callback)

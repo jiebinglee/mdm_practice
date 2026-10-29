@@ -6,7 +6,7 @@ class OperationsInfrastructureGateway:
     """
     运维基础设施网关。
 
-    该对象负责延迟加载 Redis、调度器、服务器监控与系统工具依赖，
+    该对象负责延迟加载 Redis、调度命令客户端、服务器监控与系统工具依赖，
     供运维运行时 facade 和其协作对象统一复用。
     """
 
@@ -29,13 +29,13 @@ class OperationsInfrastructureGateway:
         return import_module('redis.exceptions').RedisError
 
     @staticmethod
-    def get_scheduler_manager() -> Any:
+    def get_scheduler_client() -> Any:
         """
-        获取调度器管理类。
+        获取无调度器生命周期的命令客户端。
 
-        :return: 调度器管理类
+        :return: 调度命令客户端类
         """
-        return import_module('config.scheduler.manager').SchedulerManager
+        return import_module('config.scheduler.client').SchedulerCommandClient
 
     @staticmethod
     def get_server_service() -> Any:

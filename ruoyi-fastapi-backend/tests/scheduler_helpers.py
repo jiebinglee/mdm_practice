@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 import module_task.scheduler_test as task_module
 from config.scheduler.dispatcher import SchedulerDispatcher
+from config.scheduler.client import SchedulerCommandClient
 from config.scheduler.executors import TimedAsyncIOExecutor
 from config.scheduler.job_adapter import JobAdapter
 from config.scheduler.job_execution import JobExecutionStore
@@ -171,6 +172,8 @@ class Runtime:
         """
         deadline = asyncio.get_running_loop().time() + 5
         while asyncio.get_running_loop().time() < deadline:
+            # 模拟独立 Worker 的周期派发，不把派发放回业务请求路径。
+            await SchedulerManager._drain_execution_requests()
             result = await self.execution(execution_id)
             if result['status'] in expected:
                 return result
@@ -280,6 +283,8 @@ def patch_runtime_globals(
     monkeypatch.setattr(task_module, 'runtime_held', held_job, raising=False)
     patch_scheduler_components(monkeypatch, scheduler)
     monkeypatch.setattr(SchedulerManager, '_is_leader', True)
+    monkeypatch.setattr(SchedulerManager, '_lease_guard', None)
+    monkeypatch.setattr(SchedulerCommandClient, '_notify', AsyncMock(return_value=True))
     monkeypatch.setattr(SchedulerManager, '_redis', SimpleNamespace(publish=AsyncMock()))
     monkeypatch.setattr(SchedulerManager, '_sync_lock', asyncio.Lock())
     monkeypatch.setattr(SchedulerManager, '_sync_pending_ids', set())

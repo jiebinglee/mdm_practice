@@ -98,7 +98,10 @@ async def test_background_loops_wait_in_both_leader_and_follower() -> None:
 
     with (
         patch('module_identity.service.runtime_service.OidcConfig.oidc_enabled', True),
-        patch('module_identity.service.runtime_service.SchedulerManager.is_application_leader', return_value=True),
+        patch(
+            'module_identity.service.runtime_service.ApplicationLeaderCoordinator.is_application_leader',
+            return_value=True,
+        ),
         patch('module_identity.service.runtime_service.asyncio.create_task', side_effect=create_task),
     ):
         await OidcRuntimeService.start_background_tasks(app)
@@ -109,7 +112,10 @@ async def test_background_loops_wait_in_both_leader_and_follower() -> None:
     created.clear()
     with (
         patch('module_identity.service.runtime_service.OidcConfig.oidc_enabled', True),
-        patch('module_identity.service.runtime_service.SchedulerManager.is_application_leader', return_value=False),
+        patch(
+            'module_identity.service.runtime_service.ApplicationLeaderCoordinator.is_application_leader',
+            return_value=False,
+        ),
         patch('module_identity.service.runtime_service.asyncio.create_task', side_effect=create_task),
     ):
         await OidcRuntimeService.start_background_tasks(app)
@@ -128,7 +134,7 @@ async def test_background_loops_resume_after_lease_reacquisition(loop: str) -> N
 
     with (
         patch(
-            'module_identity.service.runtime_service.SchedulerManager.is_application_leader',
+            'module_identity.service.runtime_service.ApplicationLeaderCoordinator.is_application_leader',
             side_effect=[False, True, False, True],
         ),
         patch(
@@ -157,7 +163,7 @@ async def test_background_loops_resume_after_lease_reacquisition(loop: str) -> N
 
 @pytest.mark.asyncio
 async def test_server_background_task_setup_delegates_oidc_runtime() -> None:
-    """应用入口只负责装配通用任务和认证中心运行时。"""
+    """应用入口只装配Application租约、通用任务和OIDC，不启动调度器。"""
     app = SimpleNamespace(state=SimpleNamespace(redis=object()))
     log_task = object()
 
@@ -166,12 +172,22 @@ async def test_server_background_task_setup_delegates_oidc_runtime() -> None:
         return log_task
 
     with (
-        patch('server.SchedulerManager.init_system_scheduler', new_callable=AsyncMock) as init_scheduler,
-        patch('server.LogAggregatorService.consume_stream', new_callable=AsyncMock),
+        patch(
+            'server.ApplicationLeaderCoordinator.init_application_leader', new_callable=AsyncMock
+        ) as init_application_leader,
+        patch(
+            'config.scheduler.manager.SchedulerManager.init_system_scheduler',
+            new_callable=AsyncMock,
+            create=True,
+        ) as init_scheduler,
+        patch('server.LogAggregatorService.consume_stream', new_callable=AsyncMock) as consume_stream,
         patch('server.asyncio.create_task', side_effect=create_task),
         patch.object(OidcRuntimeService, 'start_background_tasks', new_callable=AsyncMock) as start_oidc,
     ):
         await _start_background_tasks(app)
 
-    init_scheduler.assert_awaited_once_with(app.state.redis)
+    init_application_leader.assert_awaited_once_with(app.state.redis)
+    init_scheduler.assert_not_called()
+    consume_stream.assert_called_once_with(app.state.redis)
+    assert app.state.log_aggregator_task is log_task
     start_oidc.assert_awaited_once_with(app)

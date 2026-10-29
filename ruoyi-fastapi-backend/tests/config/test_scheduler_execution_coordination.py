@@ -100,6 +100,9 @@ async def test_running_process_blocks_new_executor_and_can_finish_after_delete(
     async with runtime.sessions() as db:
         response = await JobService.execute_job_once_services(db, job)
     execution_id = response.result['executionId']
+    assert response.result['status'] == 'pending'
+    assert runtime.scheduler.get_job(f'_manual:{execution_id}') is None
+    await SchedulerManager._drain_execution_requests()
     runtime.scheduler.resume()
     try:
         assert (await wait_for_process_file(started, executor))['pid'] != os.getpid()
@@ -114,6 +117,7 @@ async def test_running_process_blocks_new_executor_and_can_finish_after_delete(
                     jobArgs=[],
                 ),
             )
+        await SchedulerManager._sync_jobs_from_database({42})
         cron = runtime.scheduler.get_job('42')
         event = await asyncio.to_thread(
             run_timed_job,
@@ -131,6 +135,8 @@ async def test_running_process_blocks_new_executor_and_can_finish_after_delete(
         monkeypatch.setattr(SchedulerManager, '_is_leader', True)
         async with runtime.sessions() as db:
             await JobService.delete_job_services(db, DeleteJobModel(jobIds='42'))
+        await SchedulerManager._sync_jobs_from_database({42})
+        assert runtime.scheduler.get_job('42') is None
         assert (await runtime.execution(execution_id))['status'] == 'running'
     finally:
         release.touch()

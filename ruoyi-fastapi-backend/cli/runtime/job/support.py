@@ -55,15 +55,15 @@ class JobDomainSupport:
         metadata_mapping = {
             'run-once': {
                 'operationLabel': '执行一次任务',
-                'successMessage': '定时任务已触发一次执行',
+                'successMessage': '定时任务执行请求已提交，等待 Worker 执行',
             },
             'pause': {
                 'operationLabel': '暂停任务',
-                'successMessage': '定时任务已暂停',
+                'successMessage': '定时任务暂停请求已提交，等待 Worker 应用',
             },
             'resume': {
                 'operationLabel': '恢复任务',
-                'successMessage': '定时任务已恢复',
+                'successMessage': '定时任务恢复请求已提交，等待 Worker 应用',
             },
         }
         if operation not in metadata_mapping:
@@ -130,44 +130,3 @@ class JobDomainSupport:
 
         items = self.serialize_job_items(result)
         return {'ok': True, 'filters': filters, 'count': len(items), 'items': items}
-
-
-class JobSchedulerSupport:
-    """
-    定时任务调度上下文支持对象。
-
-    该对象负责统一关闭调度器上下文资源，避免调度型操作在 facade 中
-    持续堆叠资源清理细节。
-
-    :param infrastructure_gateway: 定时任务基础设施网关
-    """
-
-    def __init__(self, infrastructure_gateway: JobInfrastructureGateway) -> None:
-        """
-        初始化定时任务调度上下文支持对象。
-
-        :param infrastructure_gateway: 定时任务基础设施网关
-        :return: None
-        """
-        self.infrastructure_gateway = infrastructure_gateway
-
-    async def close_scheduler_context(self, redis: Any) -> None:
-        """
-        安全关闭任务调度相关资源。
-
-        :param redis: Redis 客户端实例
-        :return: None
-        """
-        scheduler_manager = self.infrastructure_gateway.get_scheduler_manager()
-        try:
-            await scheduler_manager.close_system_scheduler()
-        except Exception:
-            pass
-
-        if redis is None:
-            return
-
-        try:
-            await redis.close()
-        except Exception:
-            pass

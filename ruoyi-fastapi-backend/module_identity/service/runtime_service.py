@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from common.constant import OidcAuditEvent
 from config.database import DataSourceRegistry
 from config.env import OidcConfig
-from config.scheduler.manager import SchedulerManager
+from config.application_leader import ApplicationLeaderCoordinator
 from module_identity.dao.oauth_audit_dao import OAuthAuditDao
 from module_identity.service.audit_service import AuditService
 from module_identity.service.key_service import KeyService, KeyServiceError
@@ -311,7 +311,7 @@ class OidcRuntimeService:
         redis = app.state.redis
         while True:
             await asyncio.sleep(60)
-            if not SchedulerManager.is_application_leader():
+            if not ApplicationLeaderCoordinator.is_application_leader():
                 continue
             try:
                 async with DataSourceRegistry.session() as db:
@@ -352,7 +352,7 @@ class OidcRuntimeService:
 
         while True:
             await asyncio.sleep(1)
-            if not SchedulerManager.is_application_leader():
+            if not ApplicationLeaderCoordinator.is_application_leader():
                 continue
             try:
                 async with DataSourceRegistry.session() as db:

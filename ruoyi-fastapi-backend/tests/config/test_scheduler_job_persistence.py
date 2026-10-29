@@ -101,6 +101,8 @@ async def verify_persistent_scheduler(
     )
     try:
         await SchedulerManager._start_scheduler_as_leader(None)
+        # 隔离库测试不持有真实 Worker 租约，执行快照无需访问 Redis 校验 token。
+        monkeypatch.setattr(current, '_worker_owner_token', None)
         current.pause()
         assert current.get_job('82') is None
         restored = current.get_job('81')
@@ -157,8 +159,11 @@ async def assert_independent_manual_request(
     async with sessions() as db:
         response = await JobService.execute_job_once_services(db, updated)
     execution_id = response.result['executionId']
+    assert response.result['status'] == 'pending'
     original_next = current.get_job('81').next_run_time
     original_trigger = SchedulerManager._jobs.trigger_signature(current.get_job('81').trigger)
+    assert current.get_job(f'_manual:{execution_id}') is None
+    await SchedulerManager._drain_execution_requests()
     assert current.get_job(f'_manual:{execution_id}') is not None
     await SchedulerManager._sync_jobs_from_database(raise_errors=True)
     assert current.get_job('81').next_run_time == original_next

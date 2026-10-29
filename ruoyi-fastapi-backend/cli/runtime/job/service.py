@@ -3,7 +3,7 @@ from typing import Any
 from cli.exit_codes import DATABASE_ERROR, RUNTIME_ERROR
 
 from .gateway import JobInfrastructureGateway
-from .support import JobDomainSupport, JobSchedulerSupport
+from .support import JobDomainSupport
 
 
 class JobRuntimeService:
@@ -15,7 +15,6 @@ class JobRuntimeService:
 
     :param infrastructure_gateway: 定时任务基础设施网关
     :param domain_support: 定时任务领域支持对象
-    :param scheduler_support: 定时任务调度上下文支持对象
     """
 
     def __init__(
@@ -23,19 +22,16 @@ class JobRuntimeService:
         *,
         infrastructure_gateway: JobInfrastructureGateway | None = None,
         domain_support: JobDomainSupport | None = None,
-        scheduler_support: JobSchedulerSupport | None = None,
     ) -> None:
         """
         初始化定时任务运行时服务。
 
         :param infrastructure_gateway: 定时任务基础设施网关
         :param domain_support: 定时任务领域支持对象
-        :param scheduler_support: 定时任务调度上下文支持对象
         :return: None
         """
         self.infrastructure_gateway = infrastructure_gateway or JobInfrastructureGateway()
         self.domain_support = domain_support or JobDomainSupport(self.infrastructure_gateway)
-        self.scheduler_support = scheduler_support or JobSchedulerSupport(self.infrastructure_gateway)
 
     async def list_jobs(
         self,
@@ -164,7 +160,7 @@ class JobRuntimeService:
         )
         return self.domain_support.build_list_payload(result, filters=filters, paged=paged)
 
-    async def run_with_scheduler_context(
+    async def run_job_operation(
         self,
         operation: str,
         job_id: int,
@@ -172,7 +168,7 @@ class JobRuntimeService:
         status: str | None = None,
     ) -> dict[str, Any]:
         """
-        在调度器上下文中执行任务操作。
+        在数据库会话中提交任务操作，由任务服务通知独立 Worker。
 
         :param operation: 操作名称
         :param job_id: 任务ID
@@ -180,17 +176,11 @@ class JobRuntimeService:
         :return: 任务操作结果
         """
         operation_metadata = self.domain_support.build_job_operation_metadata(operation)
-        redis = None
         async_session_local = self.infrastructure_gateway.get_async_session_local()
-        redis_util = self.infrastructure_gateway.get_redis_util()
-        scheduler_manager = self.infrastructure_gateway.get_scheduler_manager()
         job_vo_module = self.infrastructure_gateway.get_job_vo_module()
         job_service = self.infrastructure_gateway.get_job_service()
         try:
             async with async_session_local() as session:
-                redis = await redis_util.create_redis_pool(log_enabled=False)
-                await scheduler_manager.init_system_scheduler(redis)
-
                 if operation == 'run-once':
                     result = await job_service.execute_job_once_services(session, job_vo_module.JobModel(jobId=job_id))
                 elif operation in {'pause', 'resume'}:
@@ -202,8 +192,6 @@ class JobRuntimeService:
                     raise ValueError(f'不支持的任务操作：{operation}')
         except Exception as exc:
             return {'ok': False, 'message': '执行定时任务操作失败', 'error': str(exc), 'exit_code': 22}
-        finally:
-            await self.scheduler_support.close_scheduler_context(redis)
 
         return {
             'ok': bool(result.is_success),
@@ -224,7 +212,7 @@ class JobRuntimeService:
         :param job_id: 任务ID
         :return: 执行结果
         """
-        return await self.run_with_scheduler_context('run-once', job_id)
+        return await self.run_job_operation('run-once', job_id)
 
     async def pause_job(self, job_id: int) -> dict[str, Any]:
         """
@@ -233,7 +221,7 @@ class JobRuntimeService:
         :param job_id: 任务ID
         :return: 暂停结果
         """
-        return await self.run_with_scheduler_context('pause', job_id, status='1')
+        return await self.run_job_operation('pause', job_id, status='1')
 
     async def resume_job(self, job_id: int) -> dict[str, Any]:
         """
@@ -242,7 +230,7 @@ class JobRuntimeService:
         :param job_id: 任务ID
         :return: 恢复结果
         """
-        return await self.run_with_scheduler_context('resume', job_id, status='0')
+        return await self.run_job_operation('resume', job_id, status='0')
 
 
 JOB_RUNTIME = JobRuntimeService()

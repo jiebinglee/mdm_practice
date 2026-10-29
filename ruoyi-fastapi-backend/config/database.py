@@ -144,6 +144,9 @@ class DatabaseDriverAdapter:
         timeout_key = self.sync_connect_timeout_key if sync else self.async_connect_timeout_key
         connect_args: dict[str, Any] = {timeout_key: config.db_connect_timeout}
         if self.db_type == 'postgresql':
+            ssl_mode = getattr(config, 'db_ssl_mode', None)
+            if ssl_mode is not None:
+                connect_args['sslmode' if sync else 'ssl'] = ssl_mode
             if sync:
                 connect_args['options'] = '-c timezone=UTC'
             else:
@@ -277,7 +280,8 @@ def create_async_db_engine(
 
 
 def create_sync_db_engine(
-    echo: bool | None = None, config: DataBaseSettings | DataSourceSettings | None = None
+    echo: bool | None = None, config: DataBaseSettings | DataSourceSettings | None = None,
+    *, connect_args: dict[str, Any] | None = None,
 ) -> Engine:
     """
     创建同步SQLAlchemy Engine
@@ -290,7 +294,7 @@ def create_sync_db_engine(
     adapter = _driver_adapter(source)
     return create_engine(
         adapter.build_url(source, sync=True),
-        connect_args=adapter.build_connect_args(source, sync=True),
+        connect_args={**adapter.build_connect_args(source, sync=True), **(connect_args or {})},
         **_engine_options(source, echo),
     )
 

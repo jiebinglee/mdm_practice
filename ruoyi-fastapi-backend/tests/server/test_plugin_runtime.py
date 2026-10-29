@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
+from common.constant import LockConstant
 from config.env import AppConfig
 from plugins.core.runtime.application import (
     get_plugin_application_runtime as get_runtime_plugin_application_runtime,
@@ -137,14 +138,22 @@ async def test_lifespan_only_application_leader_outputs_banner_and_addresses() -
     fake_logger = MagicMock()
     fake_logger.complete = AsyncMock()
 
+    async def initialize_after_renewal(_app: object, *, application_leader: bool) -> None:
+        assert application_leader is True
+        start_renewal.assert_called_once_with(redis)
+
     with (
         patch('server.RedisUtil.create_redis_pool', new=AsyncMock(return_value=redis)),
-        patch('server.SchedulerManager.get_application_lock_owner_token', return_value='owner-1'),
-        patch('server.StartupUtil.acquire_application_leader', new=AsyncMock(return_value=True)),
-        patch('server.SchedulerManager.start_application_lock_renewal') as start_renewal,
-        patch('server.SchedulerManager.is_application_leader', return_value=True),
+        patch('server.ApplicationLeaderCoordinator.get_application_lock_owner_token', return_value='owner-1'),
+        patch(
+            'server.StartupUtil.acquire_application_leader', new=AsyncMock(return_value=True)
+        ) as acquire_application_leader,
+        patch('server.ApplicationLeaderCoordinator.start_application_lock_renewal') as start_renewal,
+        patch('server.ApplicationLeaderCoordinator.is_application_leader', return_value=True),
         patch('server.TransportKeyProvider.validate_runtime_configuration'),
-        patch('server._initialize_application_runtime', new_callable=AsyncMock) as initialize_runtime,
+        patch(
+            'server._initialize_application_runtime', new=AsyncMock(side_effect=initialize_after_renewal)
+        ) as initialize_runtime,
         patch('server._shutdown_application_runtime', new_callable=AsyncMock) as shutdown_runtime,
         patch('server.asyncio.sleep', new_callable=AsyncMock),
         patch('server.IPUtil.get_local_ip', return_value='127.0.0.1'),
@@ -155,6 +164,12 @@ async def test_lifespan_only_application_leader_outputs_banner_and_addresses() -
         async with lifespan(app):
             pass
 
+    acquire_application_leader.assert_awaited_once_with(
+        redis=redis,
+        lock_key=LockConstant.APP_STARTUP_LOCK_KEY,
+        owner_token='owner-1',
+        lock_expire_seconds=LockConstant.LOCK_EXPIRE_SECONDS,
+    )
     start_renewal.assert_called_once_with(redis)
     initialize_runtime.assert_awaited_once_with(app, application_leader=True)
     worship.assert_called_once_with()
@@ -182,10 +197,12 @@ async def test_lifespan_non_leader_runs_local_initialization_without_display_log
 
     with (
         patch('server.RedisUtil.create_redis_pool', new=AsyncMock(return_value=redis)),
-        patch('server.SchedulerManager.get_application_lock_owner_token', return_value='owner-2'),
-        patch('server.StartupUtil.acquire_application_leader', new=AsyncMock(return_value=False)),
-        patch('server.SchedulerManager.start_application_lock_renewal') as start_renewal,
-        patch('server.SchedulerManager.is_application_leader') as is_application_leader,
+        patch('server.ApplicationLeaderCoordinator.get_application_lock_owner_token', return_value='owner-2'),
+        patch(
+            'server.StartupUtil.acquire_application_leader', new=AsyncMock(return_value=False)
+        ) as acquire_application_leader,
+        patch('server.ApplicationLeaderCoordinator.start_application_lock_renewal') as start_renewal,
+        patch('server.ApplicationLeaderCoordinator.is_application_leader') as is_application_leader,
         patch('server.TransportKeyProvider.validate_runtime_configuration'),
         patch('server._initialize_application_runtime', new_callable=AsyncMock) as initialize_runtime,
         patch('server._shutdown_application_runtime', new_callable=AsyncMock) as shutdown_runtime,
@@ -195,6 +212,12 @@ async def test_lifespan_non_leader_runs_local_initialization_without_display_log
         async with lifespan(app):
             pass
 
+    acquire_application_leader.assert_awaited_once_with(
+        redis=redis,
+        lock_key=LockConstant.APP_STARTUP_LOCK_KEY,
+        owner_token='owner-2',
+        lock_expire_seconds=LockConstant.LOCK_EXPIRE_SECONDS,
+    )
     start_renewal.assert_not_called()
     is_application_leader.assert_not_called()
     initialize_runtime.assert_awaited_once_with(app, application_leader=False)
@@ -214,7 +237,7 @@ async def test_lifespan_non_leader_initialization_error_propagates_and_still_cle
 
     with (
         patch('server.RedisUtil.create_redis_pool', new=AsyncMock(return_value=MagicMock())),
-        patch('server.SchedulerManager.get_application_lock_owner_token', return_value='owner-3'),
+        patch('server.ApplicationLeaderCoordinator.get_application_lock_owner_token', return_value='owner-3'),
         patch('server.StartupUtil.acquire_application_leader', new=AsyncMock(return_value=False)),
         patch('server.TransportKeyProvider.validate_runtime_configuration'),
         patch(
@@ -272,7 +295,10 @@ async def test_lifespan_database_initialization_failure_releases_redis_and_datab
     with (
         patch('server.RedisUtil.create_redis_pool', new=AsyncMock(return_value=redis)),
         patch('server.DataSourceRegistry', database_registry),
-        patch('server.SchedulerManager.get_application_lock_owner_token', return_value='owner-db-failure'),
+        patch(
+            'server.ApplicationLeaderCoordinator.get_application_lock_owner_token',
+            return_value='owner-db-failure',
+        ),
         patch('server.StartupUtil.acquire_application_leader', new=AsyncMock(return_value=False)),
         patch('server._shutdown_application_runtime', new_callable=AsyncMock) as shutdown_runtime,
         pytest.raises(RuntimeError, match='database unavailable'),
@@ -286,7 +312,7 @@ async def test_lifespan_database_initialization_failure_releases_redis_and_datab
 
 @pytest.mark.asyncio
 async def test_shutdown_application_runtime_preserves_cleanup_order() -> None:
-    """校验插件关闭先执行，随后按Scheduler、Redis、数据库顺序释放资源。"""
+    """校验插件关闭先执行，随后按Application租约、Redis、数据库顺序释放资源。"""
     events: list[str] = []
     app = SimpleNamespace(
         state=SimpleNamespace(
@@ -299,8 +325,8 @@ async def test_shutdown_application_runtime_preserves_cleanup_order() -> None:
     async def record_plugin_shutdown(_app: object) -> None:
         events.append('plugin')
 
-    async def record_scheduler_shutdown() -> None:
-        events.append('scheduler')
+    async def record_coordinator_shutdown() -> None:
+        events.append('coordinator')
 
     async def record_redis_shutdown(_app: object) -> None:
         events.append('redis')
@@ -315,9 +341,15 @@ async def test_shutdown_application_runtime_preserves_cleanup_order() -> None:
     with (
         patch('server.get_plugin_application_runtime', return_value=plugin_runtime),
         patch(
-            'server.SchedulerManager.close_system_scheduler',
-            new=AsyncMock(side_effect=record_scheduler_shutdown),
+            'server.ApplicationLeaderCoordinator.close',
+            new=AsyncMock(side_effect=record_coordinator_shutdown),
         ),
+        patch('server.OidcRuntimeService.stop_background_tasks', new_callable=AsyncMock),
+        patch(
+            'config.scheduler.manager.SchedulerManager.close_system_scheduler',
+            new_callable=AsyncMock,
+            create=True,
+        ) as close_scheduler,
         patch(
             'server.RedisUtil.close_redis_pool',
             new=AsyncMock(side_effect=record_redis_shutdown),
@@ -327,7 +359,8 @@ async def test_shutdown_application_runtime_preserves_cleanup_order() -> None:
     ):
         await _shutdown_application_runtime(app)
 
-    assert events == ['plugin', 'scheduler', 'redis', 'database', 'logs']
+    assert events == ['plugin', 'coordinator', 'redis', 'database', 'logs']
+    close_scheduler.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -350,18 +383,19 @@ async def test_shutdown_application_runtime_releases_resources_when_plugin_hook_
 
 
 @pytest.mark.asyncio
-async def test_stop_background_tasks_closes_redis_and_database_when_scheduler_close_fails() -> None:
-    """校验Scheduler释放异常不会跳过Redis和数据库清理。"""
+async def test_stop_background_tasks_closes_redis_and_database_when_coordinator_close_fails() -> None:
+    """校验Application租约释放异常不会跳过Redis和数据库清理。"""
     app = SimpleNamespace(state=SimpleNamespace(redis=object()))
 
     with (
         patch(
-            'server.SchedulerManager.close_system_scheduler',
-            new=AsyncMock(side_effect=RuntimeError('scheduler close failed')),
+            'server.ApplicationLeaderCoordinator.close',
+            new=AsyncMock(side_effect=RuntimeError('coordinator close failed')),
         ),
+        patch('server.OidcRuntimeService.stop_background_tasks', new_callable=AsyncMock),
         patch('server.RedisUtil.close_redis_pool', new_callable=AsyncMock) as close_redis_pool,
         patch('server.DataSourceRegistry.dispose_all', new_callable=AsyncMock) as dispose_all,
-        pytest.raises(RuntimeError, match='scheduler close failed'),
+        pytest.raises(RuntimeError, match='coordinator close failed'),
     ):
         await _stop_background_tasks(app)
 

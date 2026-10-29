@@ -30,6 +30,7 @@ class JobSnapshot:
     execution_id: str | None = None
     dispatch_token: str | None = None
     managed: bool = False
+    scheduler_owner: str | None = None
 
     @classmethod
     def from_job(cls, job: Job, *, managed: bool = False) -> 'JobSnapshot':
@@ -54,6 +55,7 @@ class JobSnapshot:
             execution_id=getattr(job.trigger, 'execution_id', None),
             dispatch_token=getattr(job.trigger, 'dispatch_token', None),
             managed=managed and (job.id.isdecimal() or job.id.startswith('_manual:')),
+            scheduler_owner=getattr(job._scheduler, '_worker_owner_token', None),
         )
 
     def execution_snapshot(self) -> dict[str, Any]:

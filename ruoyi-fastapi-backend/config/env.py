@@ -93,6 +93,7 @@ class DataSourceSettings(BaseModel):
     db_password: SecretStr
     db_database: str = Field(min_length=1)
 
+    db_ssl_mode: Literal['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full'] | None = None
     db_echo: bool = True
     db_connect_timeout: int = Field(default=10, gt=0)
     db_max_overflow: int = Field(default=10, ge=0)
@@ -192,6 +193,41 @@ class RedisSettings(BaseSettings):
     redis_username: str = ''
     redis_password: str = ''
     redis_database: int = 2
+
+
+class SchedulerSettings(BaseSettings):
+    """独立调度进程配置；Web 仅使用通知通道和通知超时。"""
+
+    scheduler_key_prefix: str = Field(default='scheduler', min_length=1)
+    scheduler_notify_timeout_seconds: float = Field(default=1, gt=0)
+    scheduler_lease_seconds: int = Field(default=60, ge=10)
+    scheduler_renew_seconds: float = Field(default=10, gt=0)
+    scheduler_io_timeout_seconds: float = Field(default=5, gt=0)
+    scheduler_shutdown_seconds: float = Field(default=15, gt=0)
+    scheduler_sync_seconds: float = Field(default=30, gt=0)
+    scheduler_dispatch_seconds: float = Field(default=1, gt=0)
+    scheduler_stall_seconds: float = Field(default=30, gt=0)
+
+    @model_validator(mode='after')
+    def validate_lease_budget(self) -> 'SchedulerSettings':
+        """续期和停顿检测必须在租约过期前留出故障退出余量。"""
+        if self.scheduler_renew_seconds + self.scheduler_io_timeout_seconds >= self.scheduler_lease_seconds:
+            raise ValueError('调度续期间隔与 I/O 超时之和必须小于租约时长')
+        if self.scheduler_stall_seconds + self.scheduler_io_timeout_seconds >= self.scheduler_lease_seconds:
+            raise ValueError('调度停顿阈值与 I/O 超时之和必须小于租约时长')
+        return self
+
+    @property
+    def lease_key(self) -> str:
+        return f'{self.scheduler_key_prefix}:leader:lock'
+
+    @property
+    def sync_channel(self) -> str:
+        return f'{self.scheduler_key_prefix}:sync:request'
+
+    @property
+    def health_key(self) -> str:
+        return f'{self.scheduler_key_prefix}:health'
 
 
 class LogSettings(BaseSettings):
@@ -750,7 +786,8 @@ class GetConfig:
         # 运行环境未指定时默认加载.env.dev
         run_env = run_env.strip() or 'dev'
         env_file = f'.env.{run_env}'
-        # 加载配置，已通过外部命令设置的环境变量保持优先
+        # 优先级：外部环境变量 > Git忽略的本地覆盖配置 > 共享环境配置。
+        load_dotenv(f'{env_file}.local')
         load_dotenv(env_file)
         return run_env
 
@@ -765,6 +802,8 @@ JwtConfig = get_config.get_jwt_config()
 DataBaseConfig = get_config.get_database_config()
 # Redis配置
 RedisConfig = get_config.get_redis_config()
+# 独立调度配置
+SchedulerConfig = SchedulerSettings()
 # 日志配置
 LogConfig = get_config.get_log_config()
 # 传输层加解密配置

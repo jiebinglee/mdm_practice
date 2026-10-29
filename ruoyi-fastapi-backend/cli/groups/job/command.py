@@ -13,6 +13,17 @@ app = typer.Typer(
 _JOB_COMMAND_CONTROLLER = JobCommandController()
 
 
+@app.command('worker', help='启动独立调度 Worker（前台进程）')
+def worker(env: EnvOption = 'dev') -> None:
+    """
+    启动独立调度 Worker，不启动 Web 应用。
+
+    :param env: 当前命令运行环境
+    :return: None
+    """
+    _JOB_COMMAND_CONTROLLER.worker(env)
+
+
 @app.command('list', help='查看定时任务列表')
 def list_command(
     env: EnvOption = 'dev',

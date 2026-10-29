@@ -98,6 +98,8 @@ ruoyi app run --env=dev
 python app.py --env=dev
 ```
 
+Web 进程不再启动调度器。需要执行定时任务时，在另一个终端独立运行 `ruoyi job worker --env=dev`。
+
 ## 3. 使用规则
 
 ### 3.1 根参数位置
@@ -137,7 +139,7 @@ ruoyi cache clear --help
 
 ### 3.4 输出模式
 
-除 `app run` 这类进程接管型命令外，大多数命令支持：
+除 `app run`、`job worker` 这类进程接管型命令外，大多数命令支持：
 
 - `--output=text`
 - `--output=json`
@@ -150,7 +152,7 @@ ruoyi cache clear --help
 - `json` 输出中的字段名保持稳定结构化契约，不为显示效果重命名
 - `json` 输出不会混入颜色码、emoji 或装饰文本
 - `json` 输出不会混入 SQLAlchemy SQL 日志、普通业务日志或其他非 JSON 文本
-- `app run` 会直接接管应用前台进程，因此不提供 `--output`
+- `app run`、`job worker` 分别接管 Web、调度 Worker 前台进程，因此不提供 `--output`
 
 示例：
 
@@ -217,6 +219,14 @@ cd ruoyi-fastapi-backend
 ruoyi app doctor --env=dev
 ruoyi app run --env=dev
 ```
+
+需要任务调度时，在另一个终端使用相同环境和后端工作目录启动 Worker：
+
+```bash
+ruoyi job worker --env=dev
+```
+
+Web 可单独运行，不会代替 Worker 调度任务。启动前必须已有任务、同步状态和执行记录所需的数据库表；Worker 不自动建表，也不执行 Web 或插件 HTTP 启动流程。完整部署与退出约束见[独立调度 Worker](scheduler_worker.md)。
 
 ### 4.2 发布前检查
 
@@ -427,9 +437,10 @@ ruoyi cache warmup --env=dev --yes
 
 ### 5.5 `job`
 
-用于定时任务查询、执行和同步。
+用于定时任务查询、执行请求提交、同步通知及独立调度 Worker 启动。
 
 ```bash
+ruoyi job worker --env=dev
 ruoyi job list --env=dev --output=json
 ruoyi job list --env=dev --job-name=同步任务 --status=0 --paged
 ruoyi job detail 1 --env=dev --output=json
@@ -441,6 +452,16 @@ ruoyi job resume 1 --env=dev --yes
 ruoyi job sync --env=dev --yes
 ruoyi job run-once 1 --env=prod --allow-prod --yes
 ```
+
+说明：
+
+- `job worker` 是前台长期进程，只接受环境选择，不接受 `--output` 或普通任务操作的确认参数；生产环境由部署进程管理器负责启动和停止。
+- `run-once` 在 SQL 中保存执行请求后返回 `executionId` 和当前 `status`；`pending` 表示等待派发，不代表已经执行或成功。
+- `pause`、`resume` 保存期望配置及同步版本，返回中的 `saved`、`syncStatus`、`jobs` 等领域字段原样保留。保存成功不等于 Worker 已应用；应查询任务详情中的同步状态及已应用版本。
+- `job sync` 只通过 `SchedulerCommandClient` 提交最佳努力通知，返回 `result` 中的待处理状态，不返回 `isLeader`，也不启动或关闭本进程调度器。
+- 普通任务操作只管理数据库会话，由 `JobService` 在提交后通知 Worker；不会创建 Redis 调度上下文。通知短连接有超时限制，失败不会撤销已提交的 SQL 修改。
+- Redis PubSub 不是持久队列，通知可能丢失。SQL 是配置、同步状态和执行请求的事实来源，Worker 定期扫描以补偿漏通知；离线期间的请求可能保持 `pending`。
+- Web 应用租约与调度租约相互独立，同一部署只应有一个活跃调度 Worker。不要以 Web 健康或 CLI 请求成功推断 Worker 就绪。详见[独立调度 Worker](scheduler_worker.md)。
 
 ### 5.6 `config`
 

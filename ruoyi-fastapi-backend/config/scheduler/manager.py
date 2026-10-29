@@ -1,9 +1,11 @@
 import asyncio
 import json
+import os
 import random
 import time
 from datetime import timezone
 from typing import Any
+from uuid import uuid4
 
 from apscheduler.events import EVENT_ALL, SchedulerEvent
 from apscheduler.job import Job
@@ -11,10 +13,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from redis import asyncio as aioredis
 
 import module_task  # noqa: F401
-from common.constant import LockConstant
-from config.env import AppConfig, LogConfig
+from config.env import LogConfig, SchedulerConfig
 from config.scheduler.dispatcher import SchedulerDispatcher
 from config.scheduler.jobs import SchedulerJobs
+from config.scheduler.lease import SchedulerLeaseGuard
 from config.scheduler.listener import SchedulerJobListener
 from config.scheduler.resources import SchedulerResources
 from config.scheduler.synchronization import SchedulerSynchronizer
@@ -33,10 +35,10 @@ class SchedulerManager:
     _scheduler: AsyncIOScheduler = scheduler
     _is_leader: bool = False
     _worker_id: str = WorkerIdUtil.get_worker_id(LogConfig.log_worker_id)
-    _application_lock_owner_token: str = StartupUtil.get_application_lock_owner_token(_worker_id)
-    _application_lock_renewal_task: asyncio.Task | None = None
+    _scheduler_lock_owner_token: str = f'{os.getpid()}:{uuid4().hex}'
+    _lease_guard: SchedulerLeaseGuard | None = None
     _redis: aioredis.Redis | None = None
-    _sync_channel: str = 'scheduler:sync:request'
+    _sync_channel: str = SchedulerConfig.sync_channel
     _sync_listener_task: asyncio.Task | None = None
     _lock_lost_task: asyncio.Task | None = None
     _sync_task: asyncio.Task | None = None
@@ -65,7 +67,7 @@ class SchedulerManager:
 
         :return: 是否开启定时同步与监听
         """
-        return not AppConfig.app_reload and AppConfig.app_workers > 1
+        return True
 
     @classmethod
     async def init_system_scheduler(cls, redis: aioredis.Redis) -> None:
@@ -77,80 +79,53 @@ class SchedulerManager:
         """
         cls._redis = redis
         cls._is_closing = False
-        logger.debug(f'🔎 Worker {cls._worker_id} 尝试获取 Application 锁...')
+        logger.debug(f'🔎 Worker {cls._worker_id} 尝试获取独立 Scheduler 锁...')
 
         acquired = await StartupUtil.acquire_application_leader(
             redis=redis,
-            lock_key=LockConstant.APP_STARTUP_LOCK_KEY,
-            owner_token=cls.get_application_lock_owner_token(),
-            lock_expire_seconds=LockConstant.LOCK_EXPIRE_SECONDS,
+            lock_key=SchedulerConfig.lease_key,
+            owner_token=cls.get_scheduler_lock_owner_token(),
+            lock_expire_seconds=SchedulerConfig.scheduler_lease_seconds,
         )
 
         if acquired:
             await cls._activate_scheduler_as_leader(redis)
         else:
             cls._is_leader = False
-            logger.debug(f'⏸️ Worker {cls._worker_id} 未持有 Application 锁，跳过 Scheduler 启动')
+            logger.debug(f'⏸️ Worker {cls._worker_id} 未持有 Scheduler 锁，等待接管')
             cls._ensure_reacquire_task()
 
     @classmethod
-    def get_application_lock_owner_token(cls) -> str:
+    def get_scheduler_lock_owner_token(cls) -> str:
         """
-        获取当前进程的Application leader租约owner token。
+        获取当前调度进程独有的租约 token，不复用 Web 应用租约。
 
         :return: Application锁owner token
         """
-        cls._application_lock_owner_token = StartupUtil.get_application_lock_owner_token(cls._worker_id)
-        return cls._application_lock_owner_token
+        return cls._scheduler_lock_owner_token
 
     @classmethod
-    def is_application_leader(cls) -> bool:
+    def is_scheduler_leader(cls) -> bool:
         """
         判断当前进程是否仍以Application leader身份运行。
 
         :return: 是否为Application leader
         """
-        return cls._is_leader
+        return cls._is_leader and (cls._lease_guard is None or cls._lease_guard.valid)
 
     @classmethod
-    def start_application_lock_renewal(cls, redis: aioredis.Redis) -> asyncio.Task:
-        """
-        启动或复用当前进程的Application leader租约续期任务。
-
-        :param redis: Redis连接对象
-        :return: Application锁续期任务
-        """
-        # server可能在Scheduler正式初始化前就获得租约；提前保存Redis以便启动失败时释放。
+    def start_scheduler_lock_renewal(cls, redis: aioredis.Redis) -> None:
+        """同步存储可能阻塞调度循环，续租和停顿检测必须在独立线程。"""
         cls._redis = redis
-        renewal_task = cls._application_lock_renewal_task
-        if renewal_task and not renewal_task.done():
-            return renewal_task
-        cls._application_lock_renewal_task = StartupUtil.start_application_leader_renewal(
-            redis=redis,
-            lock_key=LockConstant.APP_STARTUP_LOCK_KEY,
-            owner_token=cls.get_application_lock_owner_token(),
-            lock_expire_seconds=LockConstant.LOCK_EXPIRE_SECONDS,
-            interval_seconds=LockConstant.LOCK_RENEWAL_INTERVAL,
-            on_lock_lost=cls.on_lock_lost,
-        )
-        return cls._application_lock_renewal_task
+        if cls._lease_guard is None:
+            cls._lease_guard = SchedulerLeaseGuard(cls.get_scheduler_lock_owner_token())
+            cls._lease_guard.start()
 
     @classmethod
-    async def stop_application_lock_renewal(cls) -> None:
-        """
-        停止当前进程的Application leader租约续期任务。
-
-        :return: None
-        """
-        renewal_task = cls._application_lock_renewal_task
-        cls._application_lock_renewal_task = None
-        if not renewal_task or renewal_task.done():
-            return
-        renewal_task.cancel()
-        try:
-            await renewal_task
-        except asyncio.CancelledError:
-            pass
+    async def stop_scheduler_lock_renewal(cls) -> None:
+        guard, cls._lease_guard = cls._lease_guard, None
+        if guard is not None:
+            await asyncio.to_thread(guard.stop)
 
     @classmethod
     async def _start_scheduler_as_leader(cls, redis: aioredis.Redis) -> None:
@@ -161,7 +136,9 @@ class SchedulerManager:
         :return: None
         """
         cls._is_leader = True
-        logger.info(f'🎯 Worker {cls._worker_id} 持有 Application 锁，开始启动定时任务...')
+        cls._scheduler._worker_owner_token = cls.get_scheduler_lock_owner_token()
+        cls._scheduler._worker_can_submit = cls.is_scheduler_leader
+        logger.info(f'🎯 Worker {cls._worker_id} 持有 Scheduler 锁，开始启动定时任务...')
         # 懒加载配置 scheduler
         cls._configure_scheduler()
         cls._scheduler.start(paused=True)
@@ -179,7 +156,7 @@ class SchedulerManager:
         cls._scheduler.add_job(
             func=cls.request_scheduler_sync,
             trigger='interval',
-            seconds=30,
+            seconds=SchedulerConfig.scheduler_sync_seconds,
             id='_scheduler_job_sync',
             name='Scheduler任务同步',
             replace_existing=True,
@@ -187,7 +164,7 @@ class SchedulerManager:
         cls._scheduler.add_job(
             func=cls._drain_execution_requests,
             trigger='interval',
-            seconds=1,
+            seconds=SchedulerConfig.scheduler_dispatch_seconds,
             id='_scheduler_execution_dispatch',
             name='Scheduler执行请求派发',
             replace_existing=True,
@@ -195,6 +172,8 @@ class SchedulerManager:
         if cls._should_enable_scheduler_sync():
             cls._sync_listener_task = asyncio.create_task(cls._listen_sync_channel(redis))
         cls._scheduler.resume()
+        if cls._lease_guard is not None:
+            cls._lease_guard.ready = True
 
         logger.info('✅ 系统初始定时任务加载成功')
 
@@ -209,20 +188,24 @@ class SchedulerManager:
         :param redis: Redis连接对象
         :return: None
         """
-        cls.start_application_lock_renewal(redis)
+        cls.start_scheduler_lock_renewal(redis)
         try:
             await cls._start_scheduler_as_leader(redis)
-        except Exception:
+        except BaseException:
             cls._is_leader = False
-            await cls.stop_application_lock_renewal()
+            if getattr(cls._scheduler, 'running', False):
+                cls._scheduler.shutdown(wait=False)
+                await asyncio.sleep(0)
+            cls._resources.dispose()
+            await cls.stop_scheduler_lock_renewal()
             try:
                 await StartupUtil.release_application_leader(
                     redis,
-                    LockConstant.APP_STARTUP_LOCK_KEY,
-                    cls.get_application_lock_owner_token(),
+                    SchedulerConfig.lease_key,
+                    cls.get_scheduler_lock_owner_token(),
                 )
             except Exception:
-                logger.exception('❌ Scheduler 启动失败后释放 Application Leader 租约失败')
+                logger.exception('❌ Scheduler 启动失败后释放调度租约失败')
             raise
 
     @classmethod
@@ -235,7 +218,7 @@ class SchedulerManager:
         if not cls._is_leader:
             return
         cls._is_leader = False
-        logger.warning(f'⚠️ Worker {cls._worker_id} 失去 Application 锁')
+        logger.warning(f'⚠️ Worker {cls._worker_id} 失去 Scheduler 锁')
         if cls._lock_lost_task:
             cls._lock_lost_task.cancel()
         cls._lock_lost_task = asyncio.create_task(cls._handle_lock_lost())
@@ -263,8 +246,10 @@ class SchedulerManager:
             cls._sync_task = None
             cls._sync_pending = False
         if getattr(cls._scheduler, 'running', False):
-            cls._scheduler.shutdown()
+            cls._scheduler.shutdown(wait=False)
+            await asyncio.sleep(0)
         cls._resources.dispose()
+        await cls.stop_scheduler_lock_renewal()
         cls._ensure_reacquire_task()
 
     @classmethod
@@ -306,18 +291,18 @@ class SchedulerManager:
                 try:
                     acquired = await StartupUtil.acquire_application_leader(
                         redis=cls._redis,
-                        lock_key=LockConstant.APP_STARTUP_LOCK_KEY,
-                        owner_token=cls.get_application_lock_owner_token(),
-                        lock_expire_seconds=LockConstant.LOCK_EXPIRE_SECONDS,
+                        lock_key=SchedulerConfig.lease_key,
+                        owner_token=cls.get_scheduler_lock_owner_token(),
+                        lock_expire_seconds=SchedulerConfig.scheduler_lease_seconds,
                     )
                 except Exception as exc:
-                    logger.error(f'❌ Application Leader 租约重新竞争失败：{exc}')
+                    logger.error(f'❌ Scheduler 租约重新竞争失败：{exc}')
                     continue
                 if acquired:
                     try:
                         await cls._activate_scheduler_as_leader(cls._redis)
                     except Exception:
-                        logger.exception('❌ 重新获得 Application Leader 租约后恢复 Scheduler 失败')
+                        logger.exception('❌ 重新获得调度租约后恢复 Scheduler 失败')
                         continue
                     return
         except asyncio.CancelledError:
@@ -333,7 +318,7 @@ class SchedulerManager:
         :return: None
         """
         cls._is_closing = True
-        await cls.stop_application_lock_renewal()
+        cls._is_leader = False
         if cls._sync_listener_task:
             cls._sync_listener_task.cancel()
             try:
@@ -356,7 +341,6 @@ class SchedulerManager:
             except asyncio.CancelledError:
                 pass
             cls._reacquire_task = None
-        cls._resources.dispose()
         if cls._lock_lost_task:
             cls._lock_lost_task.cancel()
             try:
@@ -365,20 +349,31 @@ class SchedulerManager:
                 pass
             cls._lock_lost_task = None
         if getattr(cls._scheduler, 'running', False):
-            cls._scheduler.shutdown()
+            cls._scheduler.pause()
+            # 先等待在途任务；不以 shutdown(wait=True) 阻塞当前事件循环。
+            pending = set()
+            for executor in cls._scheduler._executors.values():
+                for future in tuple(getattr(executor, '_pending_futures', ())):
+                    pending.add(future if asyncio.isfuture(future) else asyncio.wrap_future(future))
+            if pending:
+                await asyncio.wait(pending, timeout=SchedulerConfig.scheduler_shutdown_seconds)
+            cls._scheduler.shutdown(wait=False)
+            await asyncio.sleep(0)
             logger.info('⏹️ 关闭定时任务成功')
-        # 必须在Redis连接池关闭前，原子释放当前进程持有的Application leader租约
+        cls._resources.dispose()
+        await cls.stop_scheduler_lock_renewal()
+        # 必须在 Redis 连接池关闭前，仅释放自己的调度租约。
         redis = cls._redis
         cls._redis = None
         try:
             if redis:
                 released = await StartupUtil.release_application_leader(
                     redis,
-                    LockConstant.APP_STARTUP_LOCK_KEY,
-                    cls.get_application_lock_owner_token(),
+                    SchedulerConfig.lease_key,
+                    cls.get_scheduler_lock_owner_token(),
                 )
                 if released:
-                    logger.info(f'🔓 Worker {cls._worker_id} 释放 Application 锁')
+                    logger.info(f'🔓 Worker {cls._worker_id} 释放 Scheduler 锁')
         finally:
             cls._is_leader = False
 
@@ -564,7 +559,7 @@ class SchedulerManager:
         :return: 配置应用结果
         """
         return await cls._synchronizer.sync_jobs(
-            job_ids, is_leader=cls.is_application_leader, raise_errors=raise_errors
+            job_ids, is_leader=cls.is_scheduler_leader, raise_errors=raise_errors
         )
 
     @classmethod
@@ -574,7 +569,7 @@ class SchedulerManager:
 
         :return: None
         """
-        await cls._dispatcher.dispatch_pending(is_leader=cls.is_application_leader)
+        await cls._dispatcher.dispatch_pending(is_leader=cls.is_scheduler_leader)
 
     @classmethod
     def scheduler_event_listener(cls, event: SchedulerEvent) -> None:

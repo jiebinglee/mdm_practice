@@ -69,25 +69,20 @@ class OperationsRuntimeService:
 
     async def sync_jobs(self) -> dict[str, Any]:
         """
-        同步调度任务配置。
+        提交调度配置同步通知，不在当前进程启动调度器。
 
-        :return: 任务同步执行结果
+        :return: 待 Worker 处理的同步请求结果，不代表已应用
         """
-        redis = None
-        scheduler_manager = None
         try:
-            redis_util = self.infrastructure_gateway.get_redis_util()
-            scheduler_manager = self.infrastructure_gateway.get_scheduler_manager()
-            redis = await redis_util.create_redis_pool(log_enabled=False)
-            await scheduler_manager.init_system_scheduler(redis)
-            await scheduler_manager.request_scheduler_sync()
+            scheduler_client = self.infrastructure_gateway.get_scheduler_client()
+            result = await scheduler_client.request_scheduler_sync()
             return {
                 'ok': True,
                 'operation': 'sync',
                 'operationLabel': '同步调度配置',
                 'schedulerSyncRequested': True,
-                'message': '调度配置同步请求已发送',
-                'isLeader': scheduler_manager._is_leader,
+                'message': '调度配置同步请求已提交，等待 Worker 应用；通知不保证送达',
+                'result': result,
             }
         except Exception as exc:
             return {
@@ -95,21 +90,10 @@ class OperationsRuntimeService:
                 'operation': 'sync',
                 'operationLabel': '同步调度配置',
                 'schedulerSyncRequested': False,
-                'message': '调度配置同步失败',
+                'message': '提交调度配置同步请求失败',
                 'error': str(exc),
                 'exit_code': SCHEDULER_ERROR,
             }
-        finally:
-            if scheduler_manager is not None:
-                try:
-                    await scheduler_manager.close_system_scheduler()
-                except Exception:
-                    pass
-            if redis is not None:
-                try:
-                    await redis.close()
-                except Exception:
-                    pass
 
     async def get_server_info(self) -> dict[str, Any]:
         """
