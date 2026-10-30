@@ -63,7 +63,7 @@ async def test_get_gen_db_table_list_only_binds_active_sql_filters() -> None:
     )
 
     with patch.object(PageUtil, 'paginate', new=AsyncMock(return_value=[])) as paginate:
-        await GenTableDao.get_gen_db_table_list(object(), query_object)
+        await GenTableDao.get_gen_db_table_list(object(), query_object, source_config=SimpleNamespace(db_type='mysql'))
 
     query = paginate.await_args.args[1]
     compiled_sql = str(query.compile())

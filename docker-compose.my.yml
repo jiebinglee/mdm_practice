@@ -2,7 +2,7 @@ services:
   # 前端服务
   ruoyi-frontend:
     build:
-      context: ./ruoyi-fastapi-frontend/${FRONTEND_FRAMEWORK:-vue3}/web
+      context: ./ruoyi-fastapi-frontend/vue3/web
       dockerfile: Dockerfile
     image: ruoyi-frontend:latest
     container_name: ruoyi-frontend
@@ -11,7 +11,7 @@ services:
     ports:
       - "12580:80"
     volumes:
-      - ./ruoyi-fastapi-frontend/${FRONTEND_FRAMEWORK:-vue3}/web/bin/nginx.dockermy.conf:/etc/nginx/conf.d/default.conf
+      - ./ruoyi-fastapi-frontend/vue3/web/bin/nginx.dockermy.conf:/etc/nginx/conf.d/default.conf
     depends_on:
       - ruoyi-backend-my
     networks:
@@ -26,7 +26,7 @@ services:
     container_name: ruoyi-backend-my
     environment:
       TZ: UTC
-      RUOYI_PLUGIN_FRONTEND_FRAMEWORK: ${FRONTEND_FRAMEWORK:-vue3}
+      RUOYI_PLUGIN_FRONTEND_FRAMEWORK: vue3
     ports:
       - "19099:9099"
     volumes:
@@ -50,7 +50,7 @@ services:
     command: ["ruoyi", "job", "worker", "--env=dockermy"]
     environment:
       TZ: UTC
-      RUOYI_PLUGIN_FRONTEND_FRAMEWORK: ${FRONTEND_FRAMEWORK:-vue3}
+      RUOYI_PLUGIN_FRONTEND_FRAMEWORK: vue3
     volumes:
       - ./ruoyi-fastapi-backend/vf_admin:/app/vf_admin
     restart: unless-stopped

@@ -1,6 +1,8 @@
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from plugins.core.frontend import require_supported_frontend_framework
+
 if TYPE_CHECKING:
     from plugins.core.manifest.schema import PluginManifest, PluginMenuManifest
 
@@ -91,13 +93,13 @@ class PluginMenuTree:
 
         :param manifest: 插件清单
         :param component: 菜单组件路径
-        :param frontend_framework: 宿主框架，React 对应 JSX，其余保留 Vue 页面约定
+        :param frontend_framework: 宿主框架，仅支持 vue3
         :return: 页面文件相对路径
         """
+        require_supported_frontend_framework(frontend_framework)
         parts = component.split('/')
         plugin_id = manifest.frontend.plugin_id or manifest.id
         if len(parts) < MIN_PLUGIN_COMPONENT_PARTS or parts[0] != 'plugin' or parts[1] != plugin_id:
             return None
 
-        suffix = '.jsx' if frontend_framework == 'react' else '.vue'
-        return Path(manifest.frontend.views_path, *parts[2:]).with_suffix(suffix)
+        return Path(manifest.frontend.views_path, *parts[2:]).with_suffix('.vue')

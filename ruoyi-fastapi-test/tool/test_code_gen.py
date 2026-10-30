@@ -30,21 +30,14 @@ class GenTableTest(SystemPage):
     async def search_table(self) -> dict:
         """等待搜索接口与表格完成，避免初始响应覆盖查询结果。"""
         form = self.page.locator('form').first
-        await (
-            form.locator('.el-form-item, .ant-form-item')
-            .filter(has_text='表名称')
-            .locator('input')
-            .fill(self.table_name)
-        )
+        await form.locator('.el-form-item').filter(has_text='表名称').locator('input').fill(self.table_name)
         async with self.page.expect_response(
             lambda response: urlparse(response.url).path.endswith('/tool/gen/list')
         ) as pending:
             await form.get_by_role('button', name=button_name('搜索')).click()
         payload = await (await pending.value).json()
         assert payload['code'] == HTTPStatus.OK, payload
-        await expect(self.page.locator('.el-table .el-loading-mask:visible, .ant-spin-spinning:visible')).to_have_count(
-            0
-        )
+        await expect(self.page.locator('.el-table .el-loading-mask:visible')).to_have_count(0)
         return payload
 
     async def import_table(self) -> None:
@@ -58,7 +51,7 @@ class GenTableTest(SystemPage):
         self.table_name = payload['rows'][0]['tableName']
         dialog = self.page.get_by_role('dialog', name='导入表', exact=True)
         row = dialog.locator('tbody tr').filter(has=self.page.get_by_text(self.table_name, exact=True))
-        await row.locator('.el-checkbox, .ant-checkbox-wrapper').click()
+        await row.locator('.el-checkbox').click()
         await expect(row.locator('input[type=checkbox]')).to_be_checked()
         async with self.page.expect_response(
             lambda response: (
@@ -85,18 +78,13 @@ class GenTableTest(SystemPage):
         await self.page.get_by_role('tab', name='基本信息', exact=True).click()
         comment = (
             self.page.get_by_role('tabpanel', name='基本信息', exact=True)
-            .locator('.el-form-item:visible, .ant-form-item:visible')
+            .locator('.el-form-item:visible')
             .filter(has_text='表描述')
             .locator('input')
         )
         # URL 和输入框可见时详情仍可能在加载，必须等初始值回填后再修改。
         await expect(comment).to_have_value(details['data']['info']['tableComment'])
         await comment.fill(self.table_comment)
-        if self.is_react:
-            await self.page.get_by_role('tab', name='生成信息', exact=True).click()
-            await self.choose(
-                self.page.get_by_role('tabpanel').filter(visible=True), '前端类型', 'React Ant Design 模板'
-            )
         async with self.page.expect_response(
             lambda response: response.request.method == 'PUT' and urlparse(response.url).path.endswith('/tool/gen')
         ) as pending:
@@ -120,13 +108,12 @@ class GenTableTest(SystemPage):
         assert payload['code'] == HTTPStatus.OK, payload
         code = payload['data']
         assert any(name.endswith('do.py.jinja2') for name in code), code.keys()
-        if self.is_react:
-            assert any('jsx' in name for name in code), code.keys()
+        assert any('vue' in name for name in code), code.keys()
         assert any(self.table_comment in source for source in code.values())
         dialog = self.page.get_by_role('dialog', name='代码预览', exact=True)
         await expect(dialog.locator('pre:visible').first).to_contain_text('class')
         await expect(dialog.locator('pre:visible').first).to_contain_text(self.table_comment)
-        await dialog.locator('.el-dialog__headerbtn, .ant-modal-close').click()
+        await dialog.locator('.el-dialog__headerbtn').click()
         async with self.page.expect_download() as pending:
             await self.table_row().locator('td').last.get_by_role('button').nth(4).click()
         download = await pending.value
@@ -139,9 +126,7 @@ class GenTableTest(SystemPage):
                 return names, '\n'.join(archive.read(name).decode('utf-8') for name in names if name.endswith('.py'))
 
         names, generated = await asyncio.to_thread(read_generated_code)
-        assert any(name.endswith('.jsx' if self.is_react else '.vue') for name in names), names
-        if self.is_react:
-            assert not any(name.endswith('.vue') for name in names), names
+        assert any(name.endswith('.vue') for name in names), names
         assert any(name.endswith('.py') for name in names), names
         assert self.table_comment in generated and self.table_name in generated
 

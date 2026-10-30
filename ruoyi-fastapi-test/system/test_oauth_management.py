@@ -27,7 +27,7 @@ async def successful_json(response: APIResponse | Response) -> dict[str, Any]:
 
 
 async def click_response(page: Page, button: Locator, path: str, method: str) -> dict[str, Any]:
-    """点击操作后等待对应业务请求完成，兼容两个框架的 API 前缀。"""
+    """点击操作后等待对应业务请求完成，兼容开发及 Docker API 前缀。"""
     async with page.expect_response(
         lambda response: urlparse(response.url).path.endswith(path) and response.request.method == method
     ) as pending:
@@ -41,7 +41,7 @@ async def find_record(page: Page, kind: str, placeholder: str, name: str) -> Loc
     await click_response(
         page, page.get_by_role('button', name=button_name('查找')), f'/system/oauth/{kind}/list', 'GET'
     )
-    rows = page.locator('.el-table__body tr, .ant-table-tbody > .ant-table-row:visible').filter(has_text=name)
+    rows = page.locator('.el-table__body tr').filter(has_text=name)
     await expect(rows.first).to_be_visible()
     return rows
 
@@ -50,13 +50,11 @@ async def change_record_status(page: Page, rows: Locator, kind: str, identifier:
     """从实际行菜单停用或启用，再确认弹窗提交的接口成功。"""
     await rows.get_by_role('button', name=button_name('更多')).click()
     label = '重新启用' if enable else {'client': '停用应用', 'resource': '停用服务', 'scope': '停用权限'}[kind]
-    await page.locator('.el-dropdown-menu:visible, .ant-dropdown:visible').get_by_text(label, exact=True).click()
+    await page.locator('.el-dropdown-menu:visible').get_by_text(label, exact=True).click()
     endpoint = f'/system/oauth/{kind}/changeStatus' if enable else f'/system/oauth/{kind}/{identifier}'
     await click_response(
         page,
-        page.locator('.el-message-box:visible, .ant-modal-confirm:visible').get_by_role(
-            'button', name=button_name('确定')
-        ),
+        page.locator('.el-message-box:visible').get_by_role('button', name=button_name('确定')),
         endpoint,
         'PUT' if enable else 'DELETE',
     )
@@ -134,7 +132,7 @@ async def test_oauth_client_registration_edit_secret_and_status(browser_harness:
         await page.goto('/system/oauth/client')
         await page.get_by_role('button', name=button_name('注册应用')).click()
         dialog = page.get_by_role('dialog', name='注册应用', exact=True)
-        await dialog.locator('.el-form-item, .ant-form-item').filter(has_text='应用名称').locator('input').fill(name)
+        await dialog.locator('.el-form-item').filter(has_text='应用名称').locator('input').fill(name)
         await dialog.get_by_role('tab', name='回调地址', exact=True).click()
         await dialog.get_by_placeholder('https://portal.example.com/callback', exact=True).fill(
             'https://example.com/e2e/callback'
@@ -149,7 +147,7 @@ async def test_oauth_client_registration_edit_secret_and_status(browser_harness:
         await rows.get_by_role('button', name=button_name('编辑')).click()
         dialog = page.get_by_role('dialog', name='编辑应用', exact=True)
         name = f'{name} edited'
-        await dialog.locator('.el-form-item, .ant-form-item').filter(has_text='应用名称').locator('input').fill(name)
+        await dialog.locator('.el-form-item').filter(has_text='应用名称').locator('input').fill(name)
         await click_response(
             page, dialog.get_by_role('button', name=button_name('保存应用')), '/system/oauth/client', 'PUT'
         )
@@ -158,24 +156,16 @@ async def test_oauth_client_registration_edit_secret_and_status(browser_harness:
         detail = await successful_json(await api.get(f'/system/oauth/client/{client_id}'))
         assert detail['data']['clientName'] == name
         await rows.get_by_role('button', name=button_name('更多')).click()
-        await (
-            page.locator('.el-dropdown-menu:visible, .ant-dropdown:visible')
-            .get_by_text('轮换应用密钥', exact=True)
-            .click()
-        )
+        await page.locator('.el-dropdown-menu:visible').get_by_text('轮换应用密钥', exact=True).click()
         await click_response(
             page,
-            page.locator('.el-message-box:visible, .ant-modal-confirm:visible').get_by_role(
-                'button', name=button_name('确定')
-            ),
+            page.locator('.el-message-box:visible').get_by_role('button', name=button_name('确定')),
             f'/system/oauth/client/{client_id}/secret',
             'POST',
         )
         secret_dialog = page.get_by_role('dialog', name='保存应用密钥', exact=True)
         await expect(secret_dialog.get_by_role('button', name=button_name('完成'))).to_be_disabled()
-        secret_input = (
-            secret_dialog.locator('.el-form-item, .ant-form-item').filter(has_text='应用密钥').locator('input')
-        )
+        secret_input = secret_dialog.locator('.el-form-item').filter(has_text='应用密钥').locator('input')
         assert await secret_input.input_value(), '轮换后应显示一次性应用密钥'
         await secret_dialog.get_by_text('我已将密钥保存到安全位置', exact=True).click()
         await expect(secret_dialog.get_by_role('checkbox', name='我已将密钥保存到安全位置')).to_be_checked()
@@ -217,7 +207,7 @@ async def test_oauth_grant_access_policy_create_and_release(browser_harness: Bro
         page = await browser_harness.new_page(authenticated=True)
         await page.goto('/system/oauth/grant')
         await page.get_by_role('button', name=button_name('访问策略')).click()
-        drawer = page.locator('.el-drawer:visible, .ant-drawer-open:visible')
+        drawer = page.locator('.el-drawer:visible')
         await drawer.get_by_role('button', name=button_name('新增禁止策略')).click()
         dialog = page.get_by_role('dialog', name='禁止用户访问应用', exact=True)
         await dialog.get_by_placeholder('输入用户管理中的用户编号', exact=True).fill(str(user_id))
@@ -229,9 +219,7 @@ async def test_oauth_grant_access_policy_create_and_release(browser_harness: Bro
         await click_response(
             page, drawer.get_by_role('button', name=button_name('查找')), '/system/oauth/grant/access/list', 'GET'
         )
-        rows = drawer.locator('.el-table__body tr, .ant-table-tbody > .ant-table-row:visible').filter(
-            has_text=client_id
-        )
+        rows = drawer.locator('.el-table__body tr').filter(has_text=client_id)
         await expect(rows.first).to_contain_text('禁止访问')
         await rows.get_by_role('button', name=button_name('解除禁止')).click()
         dialog = page.get_by_role('dialog', name='解除应用访问禁止', exact=True)
@@ -268,7 +256,7 @@ async def test_oauth_session_search_and_reset(browser_harness: BrowserHarness) -
     assert parse_qs(urlparse(response.url).query)['ipAddress'] == ['192.0.2.240']
     assert payload['rows'] == []
     await expect(page.get_by_role('button', name=button_name('强制下线'))).to_be_disabled()
-    await expect(page.locator('.app-main .el-empty, .app-main .ant-empty')).to_be_visible()
+    await expect(page.locator('.app-main .el-empty')).to_be_visible()
     await click_response(
         page, page.get_by_role('button', name=button_name('清空')), '/system/oauth/session/list', 'GET'
     )

@@ -2,7 +2,7 @@
     <img alt="logo" src="./ruoyi-fastapi-frontend/vue3/web/src/assets/logo/logo.png">
 </h1>
 <h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">RuoYi-FastAPI</h1>
-<h4 align="center">基于 Vue/React + FastAPI 的前后端分离快速开发框架</h4>
+<h4 align="center">基于 Vue3 + FastAPI 的前后端分离快速开发框架</h4>
 <p align="center">
     <a href="https://gitee.com/insistence2022/RuoYi-FastAPI/stargazers">
         <img alt="Gitee" src="https://gitee.com/insistence2022/RuoYi-FastAPI/badge/star.svg?theme=dark">
@@ -32,8 +32,8 @@
 
 RuoYi-FastAPI是一套全部开源的快速开发平台，毫无保留给个人及企业免费使用。
 
-* Web 前端提供 Vue2 + Element UI、Vue3 + Element Plus 和 React + Ant Design 三套工程。Vue2、Vue3 版本分别基于<u>[RuoYi-Vue](https://github.com/yangzongzhuan/RuoYi-Vue)</u>和<u>[RuoYi-Vue3](https://github.com/yangzongzhuan/RuoYi-Vue3)</u>修改。
-* 移动端提供基于 uni-app 的 Vue2、Vue3 和 基于 Taro 的 React 三套工程，内置 Tailwind CSS，Vue2、Vue3 版本基于<u>[RuoYi-App](https://github.com/yangzongzhuan/RuoYi-App)</u>项目修改。
+* Web 前端仅保留 Vue3 + Element Plus + Vite 工程，基于<u>[RuoYi-Vue3](https://github.com/yangzongzhuan/RuoYi-Vue3)</u>修改。
+* 移动端仅保留基于 uni-app 的 Vue3 工程，内置 Tailwind CSS，基于<u>[RuoYi-App](https://github.com/yangzongzhuan/RuoYi-App)</u>项目修改。
 * 后端采用FastAPI、sqlalchemy、MySQL（PostgreSQL）、Redis、OAuth2 & Jwt。
 * 权限认证使用OAuth2 & Jwt，支持多终端认证系统。
 * 内置 OAuth 2.0 / OpenID Connect（OIDC）统一认证中心，为业务应用提供单点登录（SSO）、授权和单点退出能力。
@@ -59,7 +59,7 @@ RuoYi-FastAPI是一套全部开源的快速开发平台，毫无保留给个人�
 15. 传输加密：支持前后端请求加密、响应解密、公钥轮换、运行策略下发与监控统计。
 16. 在线构建器：拖动表单元素生成相应的HTML代码。
 17. 系统接口：根据业务代码自动生成相关的api接口文档。
-18. 代码生成：配置数据库表信息，一键生成前后端代码（Python、SQL、Vue、JavaScript、React JSX）并打包下载。
+18. 代码生成：配置数据库表信息，一键生成前后端代码（Python、SQL、Vue3、JavaScript）并打包下载。
 19. AI管理：提供AI模型管理和AI对话功能。
 20. 文件管理：统一管理公开文件和受保护附件，支持访问控制、业务引用保护、操作审计、回收站、保留策略及存储对账。
 21. 插件系统：支持插件发现、安装、启停、升级、卸载与清理，提供依赖与配置管理、迁移与种子、定时任务、菜单权限、批量预演、健康诊断、操作审计及前后端插件脚手架。
@@ -195,18 +195,12 @@ RuoYi-FastAPI是一套全部开源的快速开发平台，毫无保留给个人�
 
 ### 工程目录
 
-前端目录约定为 `ruoyi-fastapi-frontend/<framework>/{web,mobile}`，其中 `<framework>` 是前端框架标识，当前为 `vue2`、`vue3`、`react`。
+前端仅保留 `ruoyi-fastapi-frontend/vue3/{web,mobile}`，分别用于 Web 管理端和移动端。
 
 ```text
 RuoYi-FastAPI/
 ├── ruoyi-fastapi-backend/       # 共用 FastAPI 后端
 ├── ruoyi-fastapi-frontend/
-│   ├── react/
-│   │   ├── web/                # React + Ant Design
-│   │   └── mobile/             # Taro + React
-│   ├── vue2/
-│   │   ├── web/                # Vue2 + Element UI
-│   │   └── mobile/             # uni-app + Vue2
 │   └── vue3/
 │       ├── web/                # Vue3 + Element Plus + Vite
 │       └── mobile/             # uni-app + Vue3 + Vite
@@ -238,7 +232,6 @@ cd RuoYi-FastAPI
 ```bash
 # 从仓库根目录进入 Vue3 Web 工程
 cd ruoyi-fastapi-frontend/vue3/web
-# 使用 Vue2 时改为：cd ruoyi-fastapi-frontend/vue2/web
 
 # 安装依赖
 npm install -g pnpm@11.28.6
@@ -251,7 +244,7 @@ pnpm install --registry=https://registry.npmmirror.com
 pnpm run dev
 ```
 
-三个 Web 工程默认都使用 `80` 端口，开发代理均指向同一个 `9099` 后端。同时运行时，请分别配置不同的前端端口。
+Vue3 Web 默认使用 `80` 端口，开发代理指向 `9099` 后端。
 
 #### Vue3 移动端
 
@@ -270,21 +263,7 @@ pnpm dev:h5
 pnpm dev:mp-weixin
 ```
 
-#### Vue2 移动端
-
-```bash
-# 从仓库根目录进入移动端工程
-cd ruoyi-fastapi-frontend/vue2/mobile
-pnpm install
-
-# 启动 H5
-pnpm dev:h5
-
-# 启动微信小程序
-pnpm dev:mp-weixin
-```
-
-移动端详细文档请参考：[Vue3 移动端](./ruoyi-fastapi-frontend/vue3/mobile/README.md)、[Vue2 移动端](./ruoyi-fastapi-frontend/vue2/mobile/README.md)。
+移动端详细文档请参考：[Vue3 移动端](./ruoyi-fastapi-frontend/vue3/mobile/README.md)。
 
 #### 后端
 
@@ -328,7 +307,7 @@ ruoyi app run --env=dev
 
 #### Web 前端
 
-先进入要发布的 `ruoyi-fastapi-frontend/vue2/web` 或 `ruoyi-fastapi-frontend/vue3/web` 工程，再运行：
+先进入 `ruoyi-fastapi-frontend/vue3/web` 工程，再运行：
 
 ```bash
 # 构建测试环境
@@ -352,7 +331,7 @@ ruoyi app run --env=prod
 
 > ⚠️ **警告：** 默认未做数据持久化配置，请注意数据备份或自行配置持久化
 
-Compose 通过前端框架标识选择 Web 工程。仓库根目录的 `docker.env` 默认设置 `FRONTEND_FRAMEWORK=vue3`，当前可选值为 `vue2`、`vue3`；改为 `vue2` 可切换到 Vue2 Web。执行下方命令时，通过 `--env-file docker.env` 显式加载配置。该变量同时选择 `ruoyi-fastapi-frontend/<framework>/web` 构建目录与对应的 nginx 配置，并通过 `RUOYI_PLUGIN_FRONTEND_FRAMEWORK` 传入后端，使插件依赖检查和安装使用相同框架分类。各框架共用后端服务与数据库配置；本次部署只构建所选 Web 工程，不会构建移动端。
+Compose 固定构建 `ruoyi-fastapi-frontend/vue3/web` 并使用对应的 nginx 配置，后端固定使用 `RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue3`，使插件依赖检查和安装使用 Vue3 分类。仓库根目录的 `docker.env` 保留 `FRONTEND_FRAMEWORK=vue3`；不支持切换其他前端框架。执行下方命令时，通过 `--env-file docker.env` 显式加载配置。本次部署只构建 Vue3 Web，不会构建移动端。
 
 #### MySQL版本
 

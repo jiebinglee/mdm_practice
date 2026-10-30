@@ -3,6 +3,7 @@ import test from 'node:test'
 import { createMobileHarness, settle, snapshot } from './mobile-harness.mjs'
 
 export function testMobileBehavior(root, framework) {
+  if (framework !== 'vue3') throw new Error('Mobile behavior tests only support vue3')
   test('HTTP failures reject requests and uploads even without a business error code', async () => {
     const app = await createMobileHarness(root, framework, {
       token: 'active-token',

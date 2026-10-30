@@ -42,12 +42,10 @@ async def test_online_user_page(browser_harness: BrowserHarness) -> None:
         secondary_token = await browser_harness.login_through_page(secondary, username, 'Test123456!')
         page = await browser_harness.new_page(authenticated=True)
         await page.goto(Config.frontend_url + '/monitor/online')
-        await page.locator('.el-form-item, .ant-form-item').filter(has_text='用户名称').locator('input').fill(username)
+        await page.locator('.el-form-item').filter(has_text='用户名称').locator('input').fill(username)
         async with page.expect_response(lambda response: urlparse(response.url).path.endswith('/monitor/online/list')):
             await page.get_by_role('button', name=button_name('搜索')).click()
-        rows = page.locator('.el-table__body-wrapper tbody tr, .ant-table-tbody > .ant-table-row:visible').filter(
-            has=page.get_by_text(username, exact=True)
-        )
+        rows = page.locator('.el-table__body-wrapper tbody tr').filter(has=page.get_by_text(username, exact=True))
         await expect(rows).to_have_count(1)
         await rows.get_by_role('button', name=button_name('强退')).click()
         async with page.expect_response(
@@ -60,10 +58,6 @@ async def test_online_user_page(browser_harness: BrowserHarness) -> None:
         response = await revoked.get('/getInfo')
         assert response.status == HTTPStatus.UNAUTHORIZED or (await response.json())['code'] == HTTPStatus.UNAUTHORIZED
         await secondary.reload()
-        if Config.frontend_framework == 'react':
-            expired = secondary.get_by_role('dialog', name='系统提示', exact=True)
-            await expect(expired).to_contain_text('登录状态已过期')
-            await expired.get_by_role('button', name=button_name('确定')).click()
         await secondary.wait_for_url(re.compile(r'/login(?:\?.*)?$'))
         await expect(secondary.get_by_placeholder('账号')).to_be_visible()
     finally:

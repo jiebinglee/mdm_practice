@@ -1,6 +1,6 @@
 # AI 管理前端插件
 
-AI 管理前端插件提供 Vue 3 版模型管理页面和 AI 对话页面。本工程位于 `ruoyi-fastapi-frontend/vue3/web`，与 Vue2 Web 共用后端 `ruoyi-fastapi-backend/plugins/ai/plugin.yaml`，由此清单统一声明菜单、组件路径和 npm 依赖。
+AI 管理前端插件提供 Vue 3 版模型管理页面和 AI 对话页面。本工程位于 `ruoyi-fastapi-frontend/vue3/web`，使用后端插件清单 `ruoyi-fastapi-backend/plugins/ai/plugin.yaml`，由此清单统一声明菜单、组件路径和 npm 依赖。
 
 ## 页面
 
@@ -49,7 +49,7 @@ plugins/ai/
 
 ## 依赖
 
-前端依赖按框架完整声明在共用后端 `plugin.yaml` 的 `dependencies.frontend.<framework>.npm/npmDev` 中，本工程使用 `vue3` 分类，包括 Markdown 渲染、代码高亮、图表和 Monaco 编辑器相关包。检查与安装只读取当前框架分类，不跨分类合并；未声明该分类时没有 npm 依赖，旧顶层 `dependencies.npm/npmDev` 会被清单校验拒绝。后端插件命令默认选择本 Web 工程；如当前终端曾选择其他框架，请将 `RUOYI_PLUGIN_FRONTEND_FRAMEWORK` 改回 `vue3`，或将 `RUOYI_PLUGIN_FRONTEND_ROOT` 指向本工程。
+前端依赖完整声明在后端 `plugin.yaml` 的 `dependencies.frontend.vue3.npm/npmDev` 中，包括 Markdown 渲染、代码高亮、图表和 Monaco 编辑器相关包。检查与安装只读取 `vue3` 分类；未声明该分类时没有 npm 依赖，旧顶层 `dependencies.npm/npmDev` 会被清单校验拒绝。后端插件命令默认选择本 Web 工程；`RUOYI_PLUGIN_FRONTEND_FRAMEWORK` 仅支持 `vue3`，需要显式指定工程目录时，将 `RUOYI_PLUGIN_FRONTEND_ROOT` 指向本工程。
 
 涉及的主要依赖：
 

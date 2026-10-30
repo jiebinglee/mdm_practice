@@ -150,26 +150,28 @@ def test_bundle_templates_record_sdk_identity_and_source_hashes(tmp_path: Path, 
 
 
 def test_bundle_template_preserves_independent_host_framework_with_auto_option(tmp_path: Path) -> None:
-    """校验 v2 的 auto 选项沿用独立宿主框架生成 SDK 来源，而不触发显式选项限制。"""
+    """校验 v2 的 auto 选项从独立 Vue3 宿主读取 SDK，而不触发显式选项限制。"""
     frontend = tmp_path / 'independent-frontend'
     source = frontend / 'src/utils'
     source.mkdir(parents=True)
     for name in ('pluginBridge.js', 'pluginBridge.d.ts', 'pluginBridge.sdk.json'):
         (source / name).write_bytes((FRONTEND_ROOT / 'src/utils' / name).read_bytes())
+    bridge = source / 'pluginBridge.js'
+    bridge.write_text(bridge.read_text(encoding='utf-8') + '\n// independent Vue3 host SDK\n', encoding='utf-8')
     runtime = CliPluginRuntimeService(
         runtime_environment=PluginRuntimeEnvironmentService(
-            backend_root=tmp_path / 'backend', frontend_root=frontend, frontend_framework='custom_ui-1'
+            backend_root=tmp_path / 'backend', frontend_root=frontend, frontend_framework='vue3'
         )
     )
 
-    payload = runtime.create_plugin(PLUGIN_ID, template='python-bundle', dry_run=True)
+    payload = runtime.create_plugin(PLUGIN_ID, template='python-bundle', frontend_framework='auto', dry_run=True)
 
     assert payload['ok'] is True
     assert payload['frontendFramework'] is None
+    copied_bridge = next(item for item in payload['files'] if item['path'].endswith('/pluginBridge.js'))
+    assert copied_bridge['content'] == bridge.read_text(encoding='utf-8')
     metadata = next(item for item in payload['files'] if item['path'].endswith('/pluginBridge.sdk.json'))
-    assert json.loads(metadata['content'])['source']['directory'] == (
-        'ruoyi-fastapi-frontend/custom_ui-1/web/src/utils'
-    )
+    assert json.loads(metadata['content'])['source']['directory'] == 'ruoyi-fastapi-frontend/vue3/web/src/utils'
 
 
 def test_api_template_does_not_resolve_unknown_independent_host_framework(tmp_path: Path) -> None:
@@ -295,7 +297,7 @@ def test_v2_python_templates_describe_explicit_release_files(tmp_path: Path, tem
     [
         ('python-asgi', {'backend': False}, '--frontend-only'),
         ('rust-bundle', {'frontend': False}, '--backend-only'),
-        ('python-bundle', {'frontend_framework': 'vue2'}, '--frontend-framework'),
+        ('python-bundle', {'frontend_framework': 'vue3'}, '--frontend-framework'),
     ],
 )
 def test_v2_templates_reject_incompatible_legacy_options(

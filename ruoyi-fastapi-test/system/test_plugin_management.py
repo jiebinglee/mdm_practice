@@ -9,7 +9,6 @@ from uuid import uuid4
 import pytest
 from playwright.async_api import expect
 
-from common.config import Config
 from system.page import SystemPage
 
 if TYPE_CHECKING:
@@ -120,8 +119,8 @@ def record_plugin_writes(view: SystemPage) -> list[Request]:
 
 
 def table_rows(scope: Locator) -> Locator:
-    """只计当前可见主表格，避免 Vue2 固定列镜像被重复计算。"""
-    return scope.locator('.el-table__body-wrapper:visible .el-table__row, .ant-table-row:visible')
+    """只计当前可见的 Element Plus 主表格。"""
+    return scope.locator('.el-table__body-wrapper:visible .el-table__row')
 
 
 async def open_plugins(browser_harness: BrowserHarness) -> tuple[SystemPage, dict]:
@@ -135,15 +134,12 @@ async def open_plugins(browser_harness: BrowserHarness) -> tuple[SystemPage, dic
 
 
 async def plugin_row(view: SystemPage) -> Locator:
-    """Vue2 横向溢出时点击固定操作列，Vue3 点击主表格操作。"""
-    fixed = view.page.locator('.app-main .el-table__fixed-right:visible .el-table__row').filter(
-        has=view.page.get_by_text(PLUGIN_ID, exact=True)
-    )
-    return fixed if await fixed.count() else view.row(PLUGIN_ID)
+    """定位主表格中的目标插件。"""
+    return view.row(PLUGIN_ID)
 
 
 async def plugin_action(view: SystemPage, label: str) -> None:
-    """操作插件所在行，兼容两套组件库的固定列。"""
+    """操作目标插件所在行。"""
     await view.button(await plugin_row(view), label).click()
 
 
@@ -272,28 +268,20 @@ async def verify_dependency_preview(view: SystemPage, preview: dict, report: dic
     for item in preview['plan']:
         await expect(view.dialog.get_by_text(item['commandText'], exact=True)).to_be_visible()
     await view.dialog.get_by_role('tab', name='策略判定', exact=True).click()
-    await expect(view.dialog.locator('.el-descriptions, .ant-descriptions')).to_contain_text('plan_only')
-    await expect(view.dialog.locator('.el-descriptions, .ant-descriptions')).to_contain_text(
-        '阻断' if preview['plan'] else '允许'
-    )
+    await expect(view.dialog.locator('.el-descriptions')).to_contain_text('plan_only')
+    await expect(view.dialog.locator('.el-descriptions')).to_contain_text('阻断' if preview['plan'] else '允许')
 
 
 async def verify_dependency_report_dialog(view: SystemPage, report: dict) -> None:
-    """Vue2 的 601 拒绝值是 error，但警告 toast 必须展示真实依赖异常信息。"""
-    assert Config.frontend_framework in {'vue2', 'vue3', 'react'}
+    """业务阻断的警告和弹窗必须展示真实依赖异常信息。"""
     if not report['ok']:
         await expect(
-            view.page.locator('.el-message--warning:visible, .ant-message-warning:visible')
-            .filter(has_text=report['message'])
-            .first
+            view.page.locator('.el-message--warning:visible').filter(has_text=report['message']).first
         ).to_be_visible()
     await expect(view.dialog).to_contain_text('插件依赖')
-    alert = view.dialog.locator('.el-alert, .ant-alert').first
-    await expect(alert).to_have_class(
-        re.compile(r'(?:el-alert--|ant-alert-)' + ('success' if report['ok'] else 'warning'))
-    )
-    message = 'error' if not report['ok'] and Config.frontend_framework == 'vue2' else report['message']
-    await expect(alert.get_by_text(message, exact=True)).to_be_visible()
+    alert = view.dialog.locator('.el-alert').first
+    await expect(alert).to_have_class(re.compile(r'el-alert--' + ('success' if report['ok'] else 'warning')))
+    await expect(alert.get_by_text(report['message'], exact=True)).to_be_visible()
     await expect(table_rows(view.dialog)).to_have_count(len(report['dependencies']) if report['ok'] else 0)
     await expect(view.button(view.dialog, '执行依赖安装')).to_be_disabled()
 
@@ -320,9 +308,7 @@ async def test_plugin_dependency_report_and_plan(browser_harness: BrowserHarness
         if blocked:
             validate_blocked_preview(preview, report['capability'])
             await expect(
-                view.page.locator('.el-message--warning:visible, .ant-message-warning:visible')
-                .filter(has_text=preview['message'])
-                .first
+                view.page.locator('.el-message--warning:visible').filter(has_text=preview['message']).first
             ).to_be_visible()
             await expect(table_rows(view.dialog)).to_have_count(0)
             await expect(view.button(view.dialog, '执行依赖安装')).to_be_disabled()
@@ -342,7 +328,7 @@ async def test_plugin_install_plan(browser_harness: BrowserHarness) -> None:
     writes = record_plugin_writes(view)
     plan_button = view.button(view.page.locator('.app-main'), '安装计划')
     await expect(plan_button).to_be_disabled()
-    selection = view.row(PLUGIN_ID).locator('.el-checkbox, .ant-checkbox-wrapper')
+    selection = view.row(PLUGIN_ID).locator('.el-checkbox')
     await selection.click()
     await expect(selection.locator('input[type=checkbox]')).to_be_checked()
     await expect(plan_button).to_be_enabled()
@@ -355,9 +341,7 @@ async def test_plugin_install_plan(browser_harness: BrowserHarness) -> None:
     blocked = validate_install_plan(payload, plugin['capability'])
     if blocked:
         await expect(
-            view.page.locator('.el-message--warning:visible, .ant-message-warning:visible')
-            .filter(has_text=payload['message'])
-            .first
+            view.page.locator('.el-message--warning:visible').filter(has_text=payload['message']).first
         ).to_be_visible()
         await expect(view.dialog).to_have_count(0)
         await expect(view.button(view.page, '执行计划：安装')).to_have_count(0)
@@ -396,7 +380,7 @@ async def test_plugin_audit_query_and_reset(browser_harness: BrowserHarness) -> 
     view, _ = await open_plugins(browser_harness)
     endpoint = f'{RESOURCE}/operation-log/list'
     original = await view.action(view.button(view.page, '审计记录').click, endpoint)
-    drawer = view.page.locator('.el-drawer:visible, .ant-drawer-open:visible')
+    drawer = view.page.locator('.el-drawer:visible')
     form = drawer.locator('form')
     await expect(drawer).to_contain_text('插件操作审计')
     await expect(table_rows(drawer)).to_have_count(len(original['rows']))

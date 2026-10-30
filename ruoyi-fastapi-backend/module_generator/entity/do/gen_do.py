@@ -36,7 +36,7 @@ class GenTable(AuditTimeMixin, Base):
         String(200), nullable=True, server_default='crud', comment='使用的模板（crud单表操作 tree树表操作）'
     )
     tpl_web_type = Column(
-        String(30), nullable=True, server_default="''", comment='前端模板类型（element-ui模版 element-plus模版）'
+        String(30), nullable=True, server_default="'element-plus'", comment='前端模板类型（Vue3 Element Plus）'
     )
     package_name = Column(String(100), nullable=True, comment='生成包路径')
     module_name = Column(String(30), nullable=True, comment='生成模块名')

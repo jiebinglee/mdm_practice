@@ -1,6 +1,6 @@
 # RuoYi-FastAPI 项目测试套件
 
-这里集中维护 RuoYi-FastAPI 的浏览器 E2E、跨工程时间契约和移动端行为测试。后端单元与契约测试位于 `ruoyi-fastapi-backend/tests`，前端各工程的测试位于自身 `tests` 目录。各前端框架共用后端，当前提供 Vue2、Vue3、React 实现。
+这里集中维护 RuoYi-FastAPI 的浏览器 E2E、跨工程时间契约和移动端行为测试。后端单元与契约测试位于 `ruoyi-fastapi-backend/tests`，前端各工程的测试位于自身 `tests` 目录。前端仅使用 Vue3，Web 和 Mobile 两个工程共用后端。
 
 ## CI 分类与触发
 
@@ -8,27 +8,20 @@
 
 | 分类 | 工作流 | 主要检查 |
 | --- | --- | --- |
-| Quality | [ci-quality.yml](../.github/workflows/ci-quality.yml) | Python/六个前端工程格式、actionlint、选路与失败门禁测试、三框架 × 四份 Compose 配置 |
+| Quality | [ci-quality.yml](../.github/workflows/ci-quality.yml) | Python/Vue3 两个前端工程格式、actionlint、选路与失败门禁测试、Vue3 四份 Compose 配置 |
 | Backend | [ci-backend.yml](../.github/workflows/ci-backend.yml) | Python 3.10–3.14 单元与契约、Windows CLI/路径、三种宿主时区 |
-| Frontend | [ci-frontend.yml](../.github/workflows/ci-frontend.yml) | Node 22/24 × 六工程单元测试、三时区契约、Web prod/docker、移动端 H5/微信及 H5 登录；React Mobile 的 Android/iOS JS bundle，完整模式增加其他小程序与鸿蒙构建 |
-| Integration | [ci-integration.yml](../.github/workflows/ci-integration.yml) | 双数据库时间持久化、插件发布、Vue2/Vue3/React HTTPS 代理与 SSE/WebSocket |
-| E2E | [ci-e2e.yml](../.github/workflows/ci-e2e.yml) | 三框架的独立数据库和应用容器、Chromium 登录/权限/29 个菜单页面/时区，以及全部业务操作用例 |
+| Frontend | [ci-frontend.yml](../.github/workflows/ci-frontend.yml) | Node 22/24 × Vue3 Web/Mobile 共 4 组合：单元测试、三时区契约、Web prod/docker、移动端 H5/微信及 H5 登录 |
+| Integration | [ci-integration.yml](../.github/workflows/ci-integration.yml) | 双数据库时间持久化、插件发布、Vue3 HTTPS 代理与 SSE/WebSocket |
+| E2E | [ci-e2e.yml](../.github/workflows/ci-e2e.yml) | Vue3 Web 的独立数据库和应用容器、Chromium 登录/权限/29 个菜单页面/时区，以及全部业务操作用例 |
 | Native | [ci-native.yml](../.github/workflows/ci-native.yml) | Rust fmt/clippy、Windows/Linux × Python 3.10–3.14 的真实原生制品 |
 
-PR 按 `.github/scripts/ci_plan.py` 的变更影响规则选择分类与前端工程，框架包含 `vue2`、`vue3`、`react`。单个移动端的改动只运行对应前端工程，不触发 Web E2E 或 Rust Native。共享依赖和 CI 变更触发全部分类；仅文档变更运行 Quality。PR E2E 使用 Python 3.12，受影响的每个 Web 框架分别测试 MySQL 和 PostgreSQL。`master` 推送、每天 UTC 18:21（北京时间次日 02:21）及手动 `full=true` 扩展为五个 Python 版本（3.10–3.14），共 30 个 E2E 组合；插件发布集成测试也覆盖这五个版本，并增加 React Mobile 的支付宝、百度、抖音、QQ、京东、快手、飞书、小红书和鸿蒙构建。手动 `full=false` 运行所有分类的 PR 规模矩阵。
+PR 按 `.github/scripts/ci_plan.py` 的变更影响规则选择分类与 Vue3 Web/Mobile 工程，框架标识仅为 `vue3`。单个移动端的改动只运行对应前端工程，不触发 Web E2E 或 Rust Native。共享依赖和 CI 变更触发全部分类；仅文档变更运行 Quality。PR E2E 使用 Python 3.12，Vue3 Web 分别测试 MySQL 和 PostgreSQL，共 2 个组合。`master` 推送、每天 UTC 18:21（北京时间次日 02:21）及手动 `full=true` 扩展为五个 Python 版本（3.10–3.14）× 两种数据库，共 10 个 E2E 组合；插件发布集成测试也覆盖这五个版本。手动 `full=false` 运行所有分类的 PR 规模矩阵。
 
-Vue2、Vue3、React 执行相同的全部 `e2e` 用例，当前每个框架收集 109 项。覆盖账号资料与锁屏、系统管理 CRUD 与授权、文件上传下载、插件和 OAuth 管理、缓存与服务监控、强退、任务执行及日志、代码生成和表单构建。选择器按实际 Element / Ant Design 组件适配，保留真实 API 响应、保存值与清理断言；React 导出用例校验 JSX 内容。完整模式与 PR 模式使用同一套业务用例。
-
-本地选择 React 时，启动隔离服务并设置 `FRONTEND_FRAMEWORK=react` 后，在测试目录执行全量用例：
-
-```bash
-python -m pytest -m e2e -v --durations=20 --junitxml=target/e2e/react/junit.xml
-python ../.github/scripts/check_test_report.py target/e2e/react/junit.xml
-```
+Vue3 Web 执行全部 `e2e` 用例，当前收集 109 项。覆盖账号资料与锁屏、系统管理 CRUD 与授权、文件上传下载、插件和 OAuth 管理、缓存与服务监控、强退、任务执行及日志、代码生成和表单构建。选择器按实际 Element Plus 组件适配，保留真实 API 响应、保存值与清理断言；表单导出用例校验 Vue 组件内容。完整模式与 PR 模式使用同一套业务用例。
 
 统一入口的 `Result` 是最终必需检查：被计划选中的分类必须成功，未选中分类才允许跳过。仓库管理员需要将分支保护的旧必需检查改为该检查。专用浏览器、原生和时区任务还检查 JUnit，防止零用例或缺依赖导致的跳过被当作通过。常规后端任务允许预期的平台跳过，但必须实际执行用例。
 
-Python 测试保留 JUnit，后端任务记录慢项耗时；失败浏览器用例附带截图、trace、控制台与服务日志。下载对应 Actions artifact 即可定位问题，前端单元和构建输出可在 job 日志中查看。本地产物统一写入各工程 `target/ci`、`target/e2e` 或 `target/plugin-network-smoke/<framework>`。后端 `--durations` 用于持续观察慢项，不对执行时间设未经测量的目标。
+Python 测试保留 JUnit，后端任务记录慢项耗时；失败浏览器用例附带截图、trace、控制台与服务日志。下载对应 Actions artifact 即可定位问题，前端单元和构建输出可在 job 日志中查看。本地产物统一写入各工程 `target/ci`、`target/e2e` 或 `target/plugin-network-smoke/vue3`。后端 `--durations` 用于持续观察慢项，不对执行时间设未经测量的目标。
 
 ## 按分类本地验证
 
@@ -56,14 +49,12 @@ pnpm run build:mp-weixin
 # 返回仓库根目录，安装 Chromium 后验证实际 H5 构建
 python -m pip install playwright==1.64.0
 python -m playwright install chromium
-python .github/scripts/mobile_smoke.py --framework vue2
 python .github/scripts/mobile_smoke.py --framework vue3
-python .github/scripts/mobile_smoke.py --framework react
 ```
 
-React Mobile 在 PR 中构建 H5、微信及 Android/iOS JS bundle；完整模式使用 `pnpm check:platforms h5 weapp alipay swan tt qq jd kwai lark xhs harmony-hybrid` 验证所有已支持的 Taro 目标。RN 使用 `pnpm build:rn:android`、`pnpm build:rn:ios`，检查命令退出状态及 bundle 非空。此检查不生成 APK/IPA，原生编译、签名和设备验收仍需原生壳工程。平台日志上传至 Frontend artifact，RN 属于 Frontend 分类，Native 分类仍用于 Rust 插件。
+`mobile_smoke.py` 的 `--framework` 仅接受 `vue3`，验证实际 H5 构建的登录、会话持久化和个人资料。移动端 CI 在 PR 与完整模式中均构建 H5 和微信小程序，日志上传至 Frontend artifact；Native 分类用于 Rust 插件。
 
-六个前端工程统一使用 Prettier 3.9.10、相同的格式规则和 `format` / `format:check` 命令：`format` 格式化整个工程，`format:check` 只检查。Vue Web 使用 `pnpm run format`，Vue2 Mobile 使用 `pnpm format`，Vue3 Mobile 和 React 两端使用 `pnpm format`。Quality 通过统一的框架/端循环执行同版本检查，各工程的 `.prettierignore` 排除构建产物、锁文件、第三方兼容代码、历史夹具及生成文件。
+Vue3 Web/Mobile 两个前端工程统一使用 Prettier 3.9.10、相同的格式规则和 `format` / `format:check` 命令：`format` 格式化整个工程，`format:check` 只检查。Web 使用 `pnpm run format`，Mobile 使用 `pnpm format`。Quality 遍历 Vue3 的 Web/Mobile 两端执行同版本检查，各工程的 `.prettierignore` 排除构建产物、锁文件、第三方兼容代码、历史夹具及生成文件。
 
 ## 功能特性
 
@@ -91,12 +82,11 @@ python -m playwright install chromium
 ```bash
 # 以下各步骤均从仓库根目录进入目标工程
 cd ruoyi-fastapi-frontend/vue3/web
-# 使用 Vue2 时改为：cd ruoyi-fastapi-frontend/vue2/web
 pnpm install
 pnpm run dev --host 127.0.0.1 --port 8083
 ```
 
-Vue2 可使用端口 `8082`。设置 `BROWSER=none`，避免开发服务自动打开浏览器。前端开发代理默认连接 `http://127.0.0.1:9099`；更改后端端口时也要调整对应工程的代理目标。
+设置 `BROWSER=none`，避免开发服务自动打开浏览器。前端开发代理默认连接 `http://127.0.0.1:9099`；更改后端端口时也要调整对应工程的代理目标。
 
 #### 启动后端
 
@@ -106,7 +96,7 @@ pip install -r requirements.txt
 python app.py --env=e2e
 ```
 
-启动前设置 `RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue2`、`vue3` 或 `react`，与本轮待测工程一致。手动启动服务时，需要在专用测试数据库中将 `sys.account.captchaEnabled` 配置设为 `false` 并刷新配置缓存；Docker 测试配置会挂载 `disable_captcha.sql` 自动处理。不要对正在使用的业务环境运行这些会写入数据的 E2E。
+启动前设置 `RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue3`，与待测 Web 工程一致。手动启动服务时，需要在专用测试数据库中将 `sys.account.captchaEnabled` 配置设为 `false` 并刷新配置缓存；Docker 测试配置会挂载 `disable_captcha.sql` 自动处理。不要对正在使用的业务环境运行这些会写入数据的 E2E。
 
 #### 运行测试
 
@@ -119,20 +109,20 @@ TEST_FRONTEND_URL=http://127.0.0.1:8083 TEST_BACKEND_URL=http://127.0.0.1:9099 T
 python ../.github/scripts/check_test_report.py target/e2e/vue3/junit.xml
 ```
 
-Windows PowerShell 等价示例（Vue2）：
+Windows PowerShell 等价示例：
 
 ```powershell
 cd ruoyi-fastapi-test
-$env:TEST_FRONTEND_URL = 'http://127.0.0.1:8082'
+$env:TEST_FRONTEND_URL = 'http://127.0.0.1:8083'
 $env:TEST_BACKEND_URL = 'http://127.0.0.1:9099'
-$env:FRONTEND_FRAMEWORK = 'vue2'
+$env:FRONTEND_FRAMEWORK = 'vue3'
 $env:TEST_SWAGGER_DISABLED = 'false'
-$env:E2E_OUTPUT_DIR = 'target/e2e/vue2/browser'
-python -m pytest -m e2e -v --durations=20 --junitxml=target/e2e/vue2/junit.xml
-python ../.github/scripts/check_test_report.py target/e2e/vue2/junit.xml
+$env:E2E_OUTPUT_DIR = 'target/e2e/vue3/browser'
+python -m pytest -m e2e -v --durations=20 --junitxml=target/e2e/vue3/junit.xml
+python ../.github/scripts/check_test_report.py target/e2e/vue3/junit.xml
 ```
 
-`TEST_SWAGGER_DISABLED` 必须与后端 `APP_DISABLE_SWAGGER` 一致：开发配置默认 `false`，Docker 测试配置默认 `true`。切换框架时，同时修改后端插件框架配置、前端 URL、`FRONTEND_FRAMEWORK` 和输出目录，再独立执行该框架全部用例。多个框架共用测试数据库或 Redis 时应顺序执行，避免缓存、强退和日志操作互相干扰。仅快速定位登录问题时可额外使用 `-m 'e2e and smoke'`，这不代表完整 E2E 验收。
+`TEST_SWAGGER_DISABLED` 必须与后端 `APP_DISABLE_SWAGGER` 一致：开发配置默认 `false`，Docker 测试配置默认 `true`。`FRONTEND_FRAMEWORK` 仅支持 `vue3`，后端插件框架配置也保持 `vue3`；前端 URL 和输出目录应与实际测试环境一致。共用测试数据库或 Redis 的多轮测试应顺序执行，避免缓存、强退和日志操作互相干扰。仅快速定位登录问题时可额外使用 `-m 'e2e and smoke'`，这不代表完整 E2E 验收。
 
 ### 方式二：使用Docker
 
@@ -144,7 +134,7 @@ cd ruoyi-fastapi-test
 
 #### 启动 Docker 服务
 
-测试目录的 `ruoyi-fastapi-test/docker.env` 默认设置 `FRONTEND_FRAMEWORK=vue3`，用于选择待测 Web 工程和 nginx 配置，当前可选值为 `vue2`、`vue3`、`react`。Compose 同时将该值作为 `RUOYI_PLUGIN_FRONTEND_FRAMEWORK` 传入后端，使插件依赖检查和安装使用相同框架分类。测试 Vue2 Web 时，将其改为 `vue2`，或通过终端环境变量传入；各前端框架共用同一个后端镜像和测试数据库配置。进入测试目录后，执行下方命令，通过 `--env-file docker.env` 显式加载配置。
+测试目录的 `ruoyi-fastapi-test/docker.env` 默认设置 `FRONTEND_FRAMEWORK=vue3`，且仅支持该值；Compose 使用 Vue3 Web 工程和 nginx 配置，并将 `RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue3` 传入后端，使插件依赖检查和安装使用相同框架分类。进入测试目录后，执行下方命令，通过 `--env-file docker.env` 显式加载配置。
 
 ```bash
 # MySQL版本
@@ -162,7 +152,7 @@ python -m pytest -m e2e -v --durations=20
 
 ### 方式三：复现 CI 独立容器环境
 
-在测试目录执行下方命令生成专用项目。生成配置保留真实应用配置，移除固定容器名，使用随机 loopback 端口和专属网络/数据卷，避免与开发环境冲突。`--database` 可选 `mysql`、`postgresql`，`--framework` 可选 `vue2`、`vue3`、`react`。
+在测试目录执行下方命令生成专用项目。生成配置保留真实应用配置，移除固定容器名，使用随机 loopback 端口和专属网络/数据卷，避免与开发环境冲突。`--database` 可选 `mysql`、`postgresql`，`prepare_e2e_compose.py` 的 `--framework` 仅接受 `vue3`。
 
 ```bash
 python prepare_e2e_compose.py --database mysql --framework vue3 --python-version 3.12 --project ruoyi-ci-local --output target/e2e/compose.json
@@ -171,7 +161,7 @@ docker compose -f target/e2e/compose.json port ruoyi-frontend 80
 docker compose -f target/e2e/compose.json port ruoyi-backend-my 9099
 ```
 
-将上述两个地址加上 `http://`，分别写入终端环境变量 `TEST_FRONTEND_URL`、`TEST_BACKEND_URL`，并将 `FRONTEND_FRAMEWORK` 设置为生成配置时选择的框架；PostgreSQL 后端服务名为 `ruoyi-backend-pg`。Bash 使用 `export NAME=value`，PowerShell 使用 `$env:NAME = 'value'`。
+将上述两个地址加上 `http://`，分别写入终端环境变量 `TEST_FRONTEND_URL`、`TEST_BACKEND_URL`，并将 `FRONTEND_FRAMEWORK` 设置为 `vue3`；PostgreSQL 后端服务名为 `ruoyi-backend-pg`。Bash 使用 `export NAME=value`，PowerShell 使用 `$env:NAME = 'value'`。
 
 ```bash
 python -m pytest -m e2e -v --durations=20 --junitxml=target/e2e/junit.xml
@@ -193,9 +183,9 @@ docker compose -f target/e2e/compose.json down --volumes --remove-orphans
 
 ### 页面访问和功能测试
 
-页面清单以两份初始化 SQL 的 `sys_menu` 中 29 个页面菜单及两版 Web 的实际 `router/views` 为依据。Vue2、Vue3 分别连接自身的真实构建或开发服务执行同一业务契约；不能仅更改矩阵标签而继续访问另一框架的页面。
+页面清单以两份初始化 SQL 的 `sys_menu` 中 29 个页面菜单及 Vue3 Web 的实际 `router/views` 为依据。测试连接 Vue3 Web 的真实构建或开发服务，执行完整业务契约。
 
-| 页面范围（Vue2 / Vue3 均执行） | 实际路由 | 功能验收 |
+| 页面范围（Vue3 Web） | 实际路由 | 功能验收 |
 | --- | --- | --- |
 | 用户、角色、菜单、部门、岗位（5 页） | `/system/user`、`role`、`menu`、`dept`、`post` | 新增、查询、编辑、删除及相关授权功能 |
 | 字典、参数、通知公告（3 页） | `/system/dict`、`config`、`notice` | 字典数据及业务记录增删改查 |
@@ -224,19 +214,17 @@ OAuth 管理测试可以在默认 `OIDC_ENABLED=false` 配置下执行。签名�
 
 ## 通用时间契约
 
-`time-contract` 按前端框架组织相同的时间工具回归测试，当前覆盖 Vue2、Vue3、React 的 Web、移动端和缺少原生 Intl 的移动端实现，验证 RFC 3339、日期合法性、epoch 单位、DST 缺失/重复时间和表单往返。固定时间样例用于验证边界行为，不依赖真实业务数据、数据库、浏览器、构建产物或 `.cache` 中预先生成的文件。
+`time-contract` 维护 Vue3 的时间工具回归测试，覆盖 Web、移动端和缺少原生 Intl 的移动端实现，验证 RFC 3339、日期合法性、epoch 单位、DST 缺失/重复时间和表单往返。固定时间样例用于验证边界行为，不依赖真实业务数据、数据库、浏览器、构建产物或 `.cache` 中预先生成的文件。
 
-前端目录约定为 `ruoyi-fastapi-frontend/<framework>/{web,mobile}`，当前框架标识为 `vue2`、`vue3`、`react`。先在各工程中按依赖清单安装依赖，再从仓库根目录运行：
+前端目录为 `ruoyi-fastapi-frontend/vue3/{web,mobile}`，框架标识仅为 `vue3`。先在各工程中按依赖清单安装依赖，再从仓库根目录运行：
 
 ```bash
 node ruoyi-fastapi-test/time-contract/run-host-timezones.mjs
-# 也可只验证一个前端框架
-node ruoyi-fastapi-test/time-contract/run-host-timezones.mjs vue2
+# 也可显式指定 Vue3
 node ruoyi-fastapi-test/time-contract/run-host-timezones.mjs vue3
-node ruoyi-fastapi-test/time-contract/run-host-timezones.mjs react
 ```
 
-脚本默认验证全部前端框架（`vue2`、`vue3`、`react`），通过自身位置定位仓库，在 UTC、Asia/Shanghai 和 America/New_York 三个独立进程中执行；更换检出目录或从其他目录调用不影响路径解析。各工程中的测试入口负责导入自身时间工具，共享契约不写死本机绝对路径。
+脚本默认验证 Vue3，通过自身位置定位仓库，在 UTC、Asia/Shanghai 和 America/New_York 三个独立进程中执行；更换检出目录或从其他目录调用不影响路径解析。各工程中的测试入口负责导入自身时间工具，共享契约不写死本机绝对路径。
 
 ## 配置说明
 
@@ -246,5 +234,5 @@ node ruoyi-fastapi-test/time-contract/run-host-timezones.mjs react
 
 1. 本机直接运行只需要数据库、Redis、Python、Node 和浏览器；只有容器方式需要 Docker 和 Docker Compose
 2. 确保选用的前端端口与后端 `9099` 未被占用，测试 URL 与实际监听地址一致
-3. 同一套测试数据库和 Redis 上顺序运行各前端框架；每轮保留独立 JUnit 和浏览器诊断目录
+3. 仅使用专用测试数据库和 Redis；共用这些资源的测试顺序运行，每轮保留独立 JUnit 和浏览器诊断目录
 4. 测试使用默认管理员账户：用户名 `admin`，密码 `admin123`

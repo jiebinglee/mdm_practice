@@ -28,8 +28,8 @@ async def successful_payload(response: APIResponse | Response) -> dict[str, Any]
 
 
 def profile_input(form: Locator, label: str) -> Locator:
-    """用用户看到的表单标签兼容 Element UI 和 Element Plus。"""
-    return form.locator('.el-form-item, .ant-form-item').filter(has_text=label).locator('input')
+    """按用户看到的 Element Plus 表单标签定位输入框。"""
+    return form.locator('.el-form-item').filter(has_text=label).locator('input')
 
 
 async def test_profile_edit_persists_and_reload_shows_saved_values(browser_harness: BrowserHarness) -> None:
@@ -48,7 +48,7 @@ async def test_profile_edit_persists_and_reload_shows_saved_values(browser_harne
     try:
         await page.goto('/user/profile')
         await page.get_by_role('tab', name='基本资料', exact=True).click()
-        form = page.locator('.el-tab-pane:visible .el-form, [role=tabpanel]:visible .ant-form')
+        form = page.locator('.el-tab-pane:visible .el-form')
         await expect(profile_input(form, '用户昵称')).to_have_value(original['nickName'])
         for key, value in updated.items():
             await profile_input(form, labels[key]).fill(value)
@@ -65,9 +65,7 @@ async def test_profile_edit_persists_and_reload_shows_saved_values(browser_harne
         await page.reload()
         for key, value in updated.items():
             await expect(profile_input(form, labels[key])).to_have_value(value)
-        await expect(
-            page.locator('.list-group-item, .profile-info-list li').filter(has_text='用户邮箱')
-        ).to_contain_text(updated['email'])
+        await expect(page.locator('.list-group-item').filter(has_text='用户邮箱')).to_contain_text(updated['email'])
     finally:
         await successful_payload(await api.put('/system/user/profile', data=original))
         restored = await successful_payload(await api.get('/system/user/profile'))
@@ -79,8 +77,8 @@ async def test_screen_lock_rejects_wrong_password_and_restores_previous_page(bro
     page = await browser_harness.new_page(authenticated=True)
     await page.goto('/user/profile')
     await expect(page.get_by_role('tab', name='基本资料', exact=True)).to_be_visible()
-    await page.locator('.navbar .avatar-wrapper, .header-avatar').hover()
-    await page.locator('.el-dropdown-menu:visible, .ant-dropdown:visible').get_by_text('锁定屏幕', exact=True).click()
+    await page.locator('.navbar .avatar-wrapper').hover()
+    await page.locator('.el-dropdown-menu:visible').get_by_text('锁定屏幕', exact=True).click()
     await page.wait_for_url('**/lock')
     password = page.get_by_placeholder('请输入登录密码', exact=True)
     await password.press('Enter')
@@ -130,9 +128,9 @@ async def test_error_pages_return_to_working_dashboard(
     await page.get_by_role('link', name=home_link, exact=True).click()
     await page.wait_for_url('**/index')
     await expect(page.locator('.app-main')).to_be_visible()
-    await expect(page.locator('.tags-view-item.active, .tags-item.active')).to_contain_text('首页')
-    await page.locator('.navbar .avatar-wrapper, .header-avatar').hover()
-    await page.locator('.el-dropdown-menu:visible, .ant-dropdown:visible').get_by_text('个人中心', exact=True).click()
+    await expect(page.locator('.tags-view-item.active')).to_contain_text('首页')
+    await page.locator('.navbar .avatar-wrapper').hover()
+    await page.locator('.el-dropdown-menu:visible').get_by_text('个人中心', exact=True).click()
     await page.wait_for_url('**/user/profile')
     await expect(page.get_by_role('tab', name='基本资料', exact=True)).to_be_visible()
 

@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 import pytest
 from playwright.async_api import expect
 
-from common.config import Config
 from common.page_catalog import MENU_PAGES, PageCase
 
 if TYPE_CHECKING:
@@ -61,7 +60,7 @@ async def test_builtin_menu_loads_data_and_content(browser_harness: BrowserHarne
     else:
         await page.goto(case.path)
     main = page.locator('.app-main')
-    await expect(main.locator(case.selector_for(Config.frontend_framework)).first).to_be_visible()
+    await expect(main.locator(case.selector).first).to_be_visible()
     if case.content:
         await expect(main).to_contain_text(case.content)
     await expect(page.locator('.tags-view-item.active, .tags-item.active')).to_contain_text(case.title)

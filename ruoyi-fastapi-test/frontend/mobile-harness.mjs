@@ -22,6 +22,7 @@ export async function createMobileHarness(
     confirmResponses = [],
   } = {}
 ) {
+  if (framework !== 'vue3') throw new Error('Mobile harness only supports vue3')
   const project = fileURLToPath(root)
   const nativeRequire = createRequire(new URL('package.json', root))
   const values = new Map([['device-theme', 'dark']])
@@ -170,21 +171,12 @@ export async function createMobileHarness(
     if (module.status === 'linked') await module.evaluate()
     return module.namespace
   }
-  let state, login, getInfo, logout
-  if (framework === 'vue2') {
-    const store = (await load('@/store')).default
-    state = store.state.user
-    login = (value) => store.dispatch('Login', value)
-    getInfo = () => store.dispatch('GetInfo')
-    logout = () => store.dispatch('LogOut')
-  } else {
-    const pinia = await load('pinia')
-    pinia.setActivePinia(pinia.createPinia())
-    state = (await load('@/store/modules/user')).useUserStore()
-    login = (value) => state.login(value)
-    getInfo = () => state.getInfo()
-    logout = () => state.logOut()
-  }
+  const pinia = await load('pinia')
+  pinia.setActivePinia(pinia.createPinia())
+  const state = (await load('@/store/modules/user')).useUserStore()
+  const login = (value) => state.login(value)
+  const getInfo = () => state.getInfo()
+  const logout = () => state.logOut()
   const webview = await load('@/utils/webview')
   const time = await load('@/utils/time')
   const auth = await load('@/utils/auth')

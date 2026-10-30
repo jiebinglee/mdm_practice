@@ -111,26 +111,21 @@ def test_plugin_runtime_create_plugin_uses_runtime_frontend_dir(tmp_path: Path) 
     assert (frontend_root / 'tests' / 'plugins' / 'demo' / 'pluginView.test.js').is_file()
 
 
-def test_plugin_runtime_create_plugin_auto_detects_vue2_frontend(tmp_path: Path) -> None:
-    """校验脚手架会从 package.json 自动识别 Vue 2 并生成对应语法。"""
+@pytest.mark.parametrize('dependencies', [{'vue': '^2.7.16'}, {'react': '^19.0.0'}])
+def test_plugin_runtime_create_plugin_rejects_legacy_frontend(tmp_path: Path, dependencies: dict[str, str]) -> None:
+    """旧工程自动识别时明确拒绝，且不写入任何插件文件。"""
     project_root = tmp_path / 'project'
     backend_root = project_root / 'api-server'
     frontend_root = project_root / 'web-client'
     backend_root.mkdir(parents=True)
-    write_frontend_package(frontend_root, {'vue': '^2.7.16', 'element-ui': '^2.15.14'})
+    write_frontend_package(frontend_root, dependencies)
 
     payload = build_runtime(backend_root, frontend_root=frontend_root).create_plugin('demo', template='crud-page')
 
-    view_content = (frontend_root / 'plugins' / 'demo' / 'views' / 'index.vue').read_text(encoding='utf-8')
-    test_content = (frontend_root / 'tests' / 'plugins' / 'demo' / 'pluginView.test.js').read_text(encoding='utf-8')
-    assert payload['ok'] is True
-    assert payload['frontendFramework'] == 'vue2'
-    assert '<script>' in view_content
-    assert 'export default {' in view_content
-    assert 'slot-scope="scope"' in view_content
-    assert '<script setup' not in view_content
-    assert "require('../../../src/utils/pluginViewResolver')" in test_content
-    assert "'./demo/views/index.vue'" in test_content
+    assert payload['ok'] is False
+    assert '仅支持 vue3' in payload['error']
+    assert not (frontend_root / 'plugins/demo').exists()
+    assert not (backend_root / 'plugins/demo').exists()
 
 
 def test_plugin_runtime_create_plugin_auto_detects_vue3_frontend(tmp_path: Path) -> None:
@@ -160,19 +155,19 @@ def test_plugin_runtime_create_plugin_supports_frontend_framework_override(tmp_p
     backend_root = project_root / 'api-server'
     frontend_root = project_root / 'web-client'
     backend_root.mkdir(parents=True)
-    write_frontend_package(frontend_root, {'vue': '^3.5.26'})
+    write_frontend_package(frontend_root, {'custom-lib': '^1.0.0'})
 
     payload = build_runtime(backend_root, frontend_root=frontend_root).create_plugin(
         'demo',
         template='crud-page',
-        frontend_framework='vue2',
+        frontend_framework='vue3',
         dry_run=True,
     )
 
     view_payload = next(file for file in payload['files'] if str(file['path']).endswith('/views/index.vue'))
     assert payload['ok'] is True
-    assert payload['frontendFramework'] == 'vue2'
-    assert 'export default {' in view_payload['content']
+    assert payload['frontendFramework'] == 'vue3'
+    assert '<script setup' in view_payload['content']
 
 
 def test_plugin_create_preserves_independent_host_framework_context(tmp_path: Path) -> None:
@@ -181,7 +176,7 @@ def test_plugin_create_preserves_independent_host_framework_context(tmp_path: Pa
     write_frontend_package(frontend, {'vue': '^3.5.26'})
     runtime = CliPluginRuntimeService(
         runtime_environment=PluginRuntimeEnvironmentService(
-            backend_root=tmp_path / 'backend', frontend_root=frontend, frontend_framework='vue2'
+            backend_root=tmp_path / 'backend', frontend_root=frontend, frontend_framework='vue3'
         )
     )
 
@@ -189,7 +184,7 @@ def test_plugin_create_preserves_independent_host_framework_context(tmp_path: Pa
     override = runtime.create_plugin('demo', frontend_framework='vue3', dry_run=True)
 
     assert payload['ok'] is True
-    assert payload['frontendFramework'] == 'vue2'
+    assert payload['frontendFramework'] == 'vue3'
     assert override['ok'] is True
     assert override['frontendFramework'] == 'vue3'
 
@@ -206,7 +201,7 @@ def test_backend_only_scaffold_does_not_require_frontend_framework(tmp_path: Pat
     assert payload['frontendFramework'] is None
 
 
-@pytest.mark.parametrize('framework', ['vue4', 'custom_ui-1'])
+@pytest.mark.parametrize('framework', ['vue2', 'react', 'vue4', 'custom_ui-1'])
 def test_plugin_runtime_create_plugin_rejects_unsupported_frontend_template(tmp_path: Path, framework: str) -> None:
     """校验合法但没有源码模板的框架会返回清晰错误且不写文件。"""
     backend_root = tmp_path / 'project' / 'api-server'
@@ -215,12 +210,12 @@ def test_plugin_runtime_create_plugin_rejects_unsupported_frontend_template(tmp_
     payload = build_runtime(backend_root).create_plugin('demo', frontend_framework=framework)
 
     assert payload['ok'] is False
-    assert f'暂不支持前端框架 {framework} 的源码模板' in str(payload['error'])
+    assert f'不支持前端框架 {framework}' in str(payload['error'])
     assert not (backend_root / 'plugins/demo').exists()
 
 
-def test_plugin_scaffold_selects_vue2_workspace_and_leaves_vue3_untouched(tmp_path: Path) -> None:
-    """校验显式选择 Vue 2 时，脚手架将页面与测试写入同一个 Vue 2 工程。"""
+def test_plugin_scaffold_rejects_vue2_without_touching_either_workspace(tmp_path: Path) -> None:
+    """校验显式选择旧框架时明确报错且不修改任何宿主。"""
     backend_root = tmp_path / 'ruoyi-fastapi-backend'
     backend_root.mkdir()
     container = tmp_path / 'ruoyi-fastapi-frontend'
@@ -229,10 +224,9 @@ def test_plugin_scaffold_selects_vue2_workspace_and_leaves_vue3_untouched(tmp_pa
 
     payload = build_runtime(backend_root).create_plugin('demo', frontend_framework='vue2')
 
-    assert payload['ok'] is True
-    assert payload['frontendFramework'] == 'vue2'
-    assert (container / 'vue2/web/plugins/demo/views/index.vue').is_file()
-    assert (container / 'vue2/web/tests/plugins/demo/pluginView.test.js').is_file()
+    assert payload['ok'] is False
+    assert '仅支持 vue3' in payload['error']
+    assert not (container / 'vue2/web/plugins/demo').exists()
     assert not (container / 'vue3/web/plugins/demo').exists()
 
 

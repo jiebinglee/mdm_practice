@@ -371,7 +371,7 @@ class DependencyManifest(BaseModel):
 
         返回独立副本，避免调用方修改原始清单；未声明的分类返回空依赖声明。
 
-        :param frontend_framework: 宿主前端框架标识，例如 vue2、vue3、react
+        :param frontend_framework: 依赖分类标识；宿主运行时仅支持 vue3，清单保留通用分类能力
         :return: 指定前端框架的前端依赖声明副本
         """
         profile = self.frontend.get(validate_frontend_framework(frontend_framework))

@@ -25,7 +25,7 @@ jobs:
           ruff format --check ruoyi-fastapi-backend ruoyi-fastapi-test .github/scripts .github/tests
       - name: Test CI routing, failure gates and deployment contracts
         run: python -m pytest .github/tests -q --junitxml=target/ci/quality.xml
-      - name: Validate every Compose framework selection
+      - name: Validate Vue3 production and test Compose deployments
         run: python .github/scripts/check_compose.py
       - name: Install actionlint
         env:
@@ -41,20 +41,18 @@ jobs:
           node-version: '22'
       - uses: pnpm/action-setup@v5
         with:
-          package_json_file: ruoyi-fastapi-frontend/react/web/package.json
+          package_json_file: ruoyi-fastapi-frontend/vue3/web/package.json
       - name: Locate the pnpm store
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v5
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-format-${{ hashFiles('ruoyi-fastapi-frontend/*/*/pnpm-lock.yaml') }}
+          key: ${{ runner.os }}-format-vue3-${{ hashFiles('ruoyi-fastapi-frontend/vue3/*/pnpm-lock.yaml') }}
       - name: Check frontend formatting
         run: |
-          for framework in vue2 vue3 react; do
-            for target in web mobile; do
-              (cd "ruoyi-fastapi-frontend/$framework/$target" && pnpm dlx prettier@3.9.10 --check .)
-            done
+          for target in web mobile; do
+            (cd "ruoyi-fastapi-frontend/vue3/$target" && pnpm dlx prettier@3.9.10 --check .)
           done
       - uses: actions/upload-artifact@v6
         if: always()

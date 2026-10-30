@@ -11,7 +11,7 @@ pytestmark = pytest.mark.e2e
 
 @pytest.mark.asyncio
 async def test_config_management_page(browser_harness: BrowserHarness) -> None:
-    """从两套真实界面完成参数新增、查询、修改、重置和删除。"""
+    """从真实界面完成参数新增、查询、修改、重置和删除。"""
     view = SystemPage()
     await view.setup(browser_harness)
     resource = '/system/config'

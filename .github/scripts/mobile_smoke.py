@@ -100,7 +100,7 @@ def create_api_handler(errors: list[str], observed: list[dict[str, Any]]) -> Cal
     return api
 
 
-async def check_login_styles(framework: str, page: Page, login_button: Locator) -> dict[str, Any]:
+async def check_login_styles(page: Page, login_button: Locator) -> dict[str, Any]:
     """验证移动端构建确实生成了布局、渐变和图标样式。"""
     styles = await login_button.evaluate(
         """element => {
@@ -113,25 +113,8 @@ async def check_login_styles(framework: str, page: Page, login_button: Locator) 
     assert styles['width'] >= LOGIN_BUTTON_MIN_WIDTH and styles['height'] >= LOGIN_BUTTON_MIN_HEIGHT, styles
     assert 'linear-gradient' in styles['background'], styles
     assert float(styles['radius'].removesuffix('px')) > 0, styles
-    if framework != 'react':
-        icon_mask = await page.locator('.i-mdi-account').first.evaluate(
-            'element => getComputedStyle(element).maskImage'
-        )
-        assert 'url(' in icon_mask, f'Tailwind 图标未生成：{icon_mask}'
-    if framework == 'vue2':
-        body = page.locator('uni-page-body')
-        header = page.locator('uni-page-head .uni-page-head')
-        await expect(body).to_have_css('display', 'block')
-        await expect(header).to_have_css('position', 'fixed')
-        layout = await body.evaluate(
-            """element => ({
-                bodyHeight: element.getBoundingClientRect().height,
-                headerHeight: document.querySelector('uni-page-head .uni-page-head').getBoundingClientRect().height,
-                viewportHeight: window.innerHeight
-            })"""
-        )
-        assert round(layout['bodyHeight'] + layout['headerHeight']) >= layout['viewportHeight'], layout
-        styles['pageLayout'] = layout
+    icon_mask = await page.locator('.i-mdi-account').first.evaluate('element => getComputedStyle(element).maskImage')
+    assert 'url(' in icon_mask, f'Tailwind 图标未生成：{icon_mask}'
     return styles
 
 
@@ -139,7 +122,7 @@ async def run_smoke(framework: str, base_url: str, output: Path) -> None:
     """
     使用真实 H5 构建验证登录、持久化身份和个人资料页。
 
-    :param framework: vue2、vue3 或 react
+    :param framework: 唯一支持的 vue3 框架
     :param base_url: 本次测试的开发服务器或静态文件服务器
     :param output: 浏览器报告目录
     :return: None
@@ -166,9 +149,8 @@ async def run_smoke(framework: str, base_url: str, output: Path) -> None:
             await page.goto(f'{base_url}/#/pages/login')
             await expect(page.locator('input[type="text"]')).to_be_visible(timeout=30000)
             await expect(page.locator('input')).to_have_count(2, timeout=15000)
-            button = page.get_by_role('button') if framework == 'react' else page.locator('uni-button')
-            login_button = button.filter(has_text=re.compile(r'登\s*录'))
-            login_styles = await check_login_styles(framework, page, login_button)
+            login_button = page.locator('uni-button').filter(has_text=re.compile(r'登\s*录'))
+            login_styles = await check_login_styles(page, login_button)
             await page.screenshot(path=str(output / 'login.png'))
             await page.locator('input[type="text"]').fill('ci-user')
             await page.locator('input[type="password"]').fill('ci-test-password')
@@ -210,7 +192,7 @@ def main() -> None:
     :return: None
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('--framework', choices=('vue2', 'vue3', 'react'), required=True)
+    parser.add_argument('--framework', choices=('vue3',), default='vue3')
     parser.add_argument('--base-url', help='验证已启动的 H5 开发服务器，不启动静态文件服务')
     parser.add_argument('--output', type=Path, help='浏览器诊断文件的输出目录')
     args = parser.parse_args()
@@ -234,8 +216,7 @@ def main() -> None:
             time.sleep(0.5)
         asyncio.run(run_smoke(args.framework, base_url, output))
         return
-    build_path = 'dist/h5' if args.framework == 'react' else 'dist/build/h5'
-    distribution = ROOT / 'ruoyi-fastapi-frontend' / args.framework / 'mobile' / build_path
+    distribution = ROOT / 'ruoyi-fastapi-frontend/vue3/mobile/dist/build/h5'
     if not (distribution / 'index.html').is_file():
         raise SystemExit(f'请先构建 H5：{distribution}')
     server = ThreadingHTTPServer(('127.0.0.1', 0), partial(SimpleHTTPRequestHandler, directory=str(distribution)))

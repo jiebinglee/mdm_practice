@@ -238,14 +238,9 @@ class TemplateUtils:
         :return: 模板列表
         """
         tpl_category = gen_table.tpl_category
-        tpl_web_type = gen_table.tpl_web_type
         params_obj = json.loads(gen_table.options) if gen_table.options else None
-        use_web_type = 'vue'
-        if tpl_web_type == 'element-plus':
-            use_web_type = 'vue/v3'
-        elif tpl_web_type == 'react-antd':
-            use_web_type = 'react'
-        extension = 'jsx' if tpl_web_type == 'react-antd' else 'vue'
+        use_web_type = 'vue/v3'
+        extension = 'vue'
         templates = [
             'python/controller.py.jinja2',
             'python/dao.py.jinja2',
@@ -296,11 +291,10 @@ class TemplateUtils:
             return f'{cls.BACKEND_PROJECT_PATH}/sql/{business_name}_menu.sql'
         if 'api.js.jinja2' in template:
             return f'{vue_path}/api/{module_name}/{business_name}.js'
-        for extension in ('vue', 'jsx'):
-            if f'index.{extension}.jinja2' in template or f'index-tree.{extension}.jinja2' in template:
-                return f'{vue_path}/views/{module_name}/{business_name}/index.{extension}'
-            if f'view.{extension}.jinja2' in template:
-                return f'{vue_path}/views/{module_name}/{business_name}/view.{extension}'
+        if template in ('vue/v3/index.vue.jinja2', 'vue/v3/index-tree.vue.jinja2'):
+            return f'{vue_path}/views/{module_name}/{business_name}/index.vue'
+        if template == 'vue/v3/view.vue.jinja2':
+            return f'{vue_path}/views/{module_name}/{business_name}/view.vue'
         return ''
 
     @classmethod

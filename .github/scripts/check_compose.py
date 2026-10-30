@@ -19,12 +19,14 @@ def validate_configuration(config: dict[str, Any], framework: str, engine: str, 
     核对 Compose 实际解析后的前后端框架及 nginx 来源。
 
     :param config: docker compose config 的 JSON 结果
-    :param framework: 本次选择的框架
+    :param framework: 唯一支持的 vue3 框架
     :param engine: my 或 pg
     :param root: 仓库根目录
     :return: None
     """
-    expected = (root / 'ruoyi-fastapi-frontend' / framework / 'web').resolve()
+    if framework != 'vue3':
+        raise ValueError('仅支持 Vue3 部署')
+    expected = (root / 'ruoyi-fastapi-frontend/vue3/web').resolve()
     services = config['services']
     frontend = services['ruoyi-frontend']
     build = frontend['build']
@@ -38,34 +40,37 @@ def validate_configuration(config: dict[str, Any], framework: str, engine: str, 
     nginx = expected / 'bin' / f'nginx.docker{engine}.conf'
     if len(volumes) != 1 or Path(volumes[0]['source']).resolve() != nginx or not nginx.is_file():
         raise ValueError(f'{framework}: nginx 配置未选择同一框架')
-    backend = services[f'ruoyi-backend-{engine}']
-    if backend['environment'].get('RUOYI_PLUGIN_FRONTEND_FRAMEWORK') != framework:
-        raise ValueError(f'{framework}: 后端插件框架与前端不一致')
+    backend_names = [f'ruoyi-backend-{engine}']
+    scheduler = f'ruoyi-scheduler-{engine}'
+    if scheduler in services:
+        backend_names.append(scheduler)
+    for name in backend_names:
+        if services[name]['environment'].get('RUOYI_PLUGIN_FRONTEND_FRAMEWORK') != 'vue3':
+            raise ValueError(f'{name}: 后端插件框架必须为 vue3')
 
 
 def main() -> None:
     """
-    使用全部框架解析生产和测试 Compose，无需启动容器。
+    以 Vue3 解析生产和测试 Compose，无需启动容器。
 
     :return: None
     """
     parser = argparse.ArgumentParser()
     parser.add_argument('--docker', default='docker')
     args = parser.parse_args()
-    for framework in ('vue2', 'vue3', 'react'):
-        for env_file, compose_file, engine in CONFIGURATIONS:
-            result = subprocess.run(
-                [args.docker, 'compose', '--env-file', env_file, '-f', compose_file, 'config', '--format', 'json'],
-                cwd=ROOT,
-                env={**os.environ, 'FRONTEND_FRAMEWORK': framework},
-                check=True,
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-                timeout=60,
-            )
-            validate_configuration(json.loads(result.stdout), framework, engine, ROOT)
-            print(f'{framework}: {compose_file} PASS')
+    for env_file, compose_file, engine in CONFIGURATIONS:
+        result = subprocess.run(
+            [args.docker, 'compose', '--env-file', env_file, '-f', compose_file, 'config', '--format', 'json'],
+            cwd=ROOT,
+            env={**os.environ, 'FRONTEND_FRAMEWORK': 'vue3'},
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            timeout=60,
+        )
+        validate_configuration(json.loads(result.stdout), 'vue3', engine, ROOT)
+        print(f'vue3: {compose_file} PASS')
 
 
 if __name__ == '__main__':

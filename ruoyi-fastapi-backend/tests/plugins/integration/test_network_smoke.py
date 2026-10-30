@@ -39,9 +39,9 @@ PREFIX = '/gateway/apps/browser_test/'
 def frontend_root() -> Path:
     """选择本次验收的真实 Web 工程，明确拒绝尚无对应宿主的框架。"""
     framework = os.environ.get('RUOYI_PLUGIN_FRONTEND_FRAMEWORK', 'vue3').strip().lower()
-    if framework not in {'vue2', 'vue3', 'react'}:
-        raise ValueError('插件网络验收仅支持 RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue2、vue3 或 react')
-    return Path(__file__).resolve().parents[4] / 'ruoyi-fastapi-frontend' / framework / 'web'
+    if framework != 'vue3':
+        raise ValueError('插件网络验收仅支持 RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue3')
+    return Path(__file__).resolve().parents[4] / 'ruoyi-fastapi-frontend/vue3/web'
 
 
 async def wait_until(predicate: Callable[[], bool], timeout: float = 15) -> None:
@@ -214,7 +214,7 @@ async def network_servers(fixture: SimpleNamespace, directory: Path, output: Pat
             )
             await wait_until(
                 lambda: ready.exists() or process.returncode is not None,
-                timeout=180 if frontend.parent.name == 'vue2' else 60,
+                timeout=60,
             )
             if not ready.exists():
                 log.flush()

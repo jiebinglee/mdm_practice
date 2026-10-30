@@ -64,7 +64,7 @@
 
 ### 3.1 通用约定
 
-Vue2 和 Vue3 使用相同的受保护文件上传接口：
+Vue3 使用以下受保护文件上传接口：
 
 ```http
 POST /common/files/upload
@@ -115,41 +115,6 @@ function buildSubmitData() {
 </script>
 ```
 
-### 3.3 Vue2 写法
-
-Vue2 项目同样全局注册 `BusinessFileUpload`：
-
-```vue
-<template>
-  <business-file-upload
-    ref="attachmentUpload"
-    v-model="form.attachmentList"
-    :limit="10"
-    :file-size="20"
-  />
-</template>
-
-<script>
-export default {
-  data() {
-    return {
-      form: {
-        attachmentList: []
-      }
-    };
-  },
-  methods: {
-    buildSubmitData() {
-      return {
-        ...this.form,
-        attachmentFileIds: this.$refs.attachmentUpload.getFileIds()
-      };
-    }
-  }
-};
-</script>
-```
-
 组件支持结构化数据回显、上传失败重试、删除、拖动排序和鉴权下载。`v-model` 的数据格式始终为：
 
 ```json
@@ -164,21 +129,21 @@ export default {
 
 也可以监听 `change` 事件，事件参数依次为结构化文件列表和文件 ID 列表。
 
-### 3.4 上传组件的适用范围
+### 3.3 上传组件的适用范围
 
-Vue2 和 Vue3 都可以使用下面的写法上传简单私有附件：
+Vue3 可以使用下面的写法上传简单私有附件：
 
 ```vue
 <file-upload v-model="form.attachment" :is-private="true" />
 ```
 
-两个版本的 `FileUpload` 都只把下载 URL 写入 `v-model`，不会保留 `fileId`。因此它们只适合旧业务或不需要引用保护的简单附件。正式业务附件统一使用 `BusinessFileUpload`。
+`FileUpload` 只把下载 URL 写入 `v-model`，不会保留 `fileId`，因此只适合旧业务或不需要引用保护的简单附件。正式业务附件统一使用 `BusinessFileUpload`。
 
-两个版本的 `ImageUpload` 都继续用于公开图片。受保护文件下载应调用 `$download.file()`，不要使用普通 `<a>` 标签直接打开。
+`ImageUpload` 继续用于公开图片。受保护文件下载应调用 `$download.file()`，不要使用普通 `<a>` 标签直接打开。
 
-### 3.5 Range 与断点下载
+### 3.4 Range 与断点下载
 
-Vue2 和 Vue3 的 `$download.file()`、`$download.resource()` 会按 8 MB 分段下载，并在分段请求失败时从当前分段重新请求。业务组件继续使用原有调用方式，不需要自行处理 `Range`。
+Vue3 的 `$download.file()`、`$download.resource()` 会按 8 MB 分段下载，并在分段请求失败时从当前分段重新请求。业务组件继续使用原有调用方式，不需要自行处理 `Range`。
 
 自定义客户端可以向业务附件下载、文件管理下载或资源下载接口发送标准单区间请求：
 

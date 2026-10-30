@@ -7,9 +7,9 @@ SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'ci_plan.py'
 SPEC = importlib.util.spec_from_file_location('ci_plan', SCRIPT)
 ci = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ci)
-FRONTEND_PROJECT_COUNT = 6
-STANDARD_E2E_COMBINATION_COUNT = 6
-FULL_E2E_COMBINATION_COUNT = 30
+FRONTEND_PROJECT_COUNT = 2
+STANDARD_E2E_COMBINATION_COUNT = 2
+FULL_E2E_COMBINATION_COUNT = 10
 
 
 def test_readme_change_only_runs_quality() -> None:
@@ -53,8 +53,6 @@ def test_bundle_example_change_runs_all_web_consumers() -> None:
     plan = ci.build_plan(['ruoyi-fastapi-backend/plugins/examples/python/bundle_demo/web/dev/mockRequest.js'])
     assert plan['frontend_matrix'] == {
         'include': [
-            {'framework': 'react', 'target': 'web'},
-            {'framework': 'vue2', 'target': 'web'},
             {'framework': 'vue3', 'target': 'web'},
         ]
     }
@@ -69,11 +67,11 @@ def test_bundle_example_change_runs_all_web_consumers() -> None:
     ],
 )
 def test_shared_auth_and_test_helpers_keep_all_network_suites(path: str) -> None:
-    """共享鉴权和测试夹具变更触发全部框架的网络验收。"""
+    """共享鉴权和测试夹具变更触发 Vue3 网络验收。"""
     plan = ci.build_plan([path])
     assert plan['required']['backend']
     assert plan['required']['integration']
-    assert plan['network_frameworks'] == ['react', 'vue2', 'vue3']
+    assert plan['network_frameworks'] == ['vue3']
 
 
 @pytest.mark.parametrize(
@@ -110,8 +108,6 @@ def test_shared_mobile_harness_runs_all_mobile_projects(path: str) -> None:
     assert plan['required']['frontend']
     assert plan['frontend_matrix'] == {
         'include': [
-            {'framework': 'react', 'target': 'mobile'},
-            {'framework': 'vue2', 'target': 'mobile'},
             {'framework': 'vue3', 'target': 'mobile'},
         ]
     }
@@ -121,7 +117,7 @@ def test_shared_mobile_harness_runs_all_mobile_projects(path: str) -> None:
 @pytest.mark.parametrize('framework', ci.FRAMEWORKS)
 def test_web_change_selects_matching_framework_and_both_databases(framework: str) -> None:
     """Web 变更使用对应框架并覆盖两类数据库。"""
-    plan = ci.build_plan([f'ruoyi-fastapi-frontend/{framework}/web/src/views/login.jsx'])
+    plan = ci.build_plan([f'ruoyi-fastapi-frontend/{framework}/web/src/views/login.vue'])
     assert plan['frontend_matrix'] == {'include': [{'framework': framework, 'target': 'web'}]}
     assert plan['network_frameworks'] == [framework]
     assert {(row['framework'], row['database'], row['python']) for row in plan['e2e_matrix']['include']} == {
@@ -147,20 +143,52 @@ def test_web_dependency_changes_keep_plugin_release_verification(filename: str) 
     assert plan['network_frameworks'] == ['vue3']
 
 
-def test_framework_move_keeps_both_sides_in_plan() -> None:
-    """跨框架移动文件保留来源和目标两侧验证。"""
+def test_target_move_keeps_both_sides_in_plan() -> None:
+    """Vue3 跨端移动文件保留来源和目标两侧验证。"""
     plan = ci.build_plan(
-        ['ruoyi-fastapi-frontend/vue2/web/src/utils/demo.js', 'ruoyi-fastapi-frontend/vue3/web/src/utils/demo.js']
+        ['ruoyi-fastapi-frontend/vue3/mobile/src/utils/demo.js', 'ruoyi-fastapi-frontend/vue3/web/src/utils/demo.js']
     )
-    assert plan['network_frameworks'] == ['vue2', 'vue3']
+    assert plan['network_frameworks'] == ['vue3']
+    assert {row['target'] for row in plan['frontend_matrix']['include']} == {'web', 'mobile'}
 
 
-def test_full_run_preserves_python_database_and_framework_combinations() -> None:
-    """完整运行保留 Python、数据库和框架的全部组合。"""
+def test_full_run_preserves_python_and_database_combinations_for_vue3() -> None:
+    """完整运行仅包含 Vue3，并保留 Python 与数据库的全部组合。"""
     plan = ci.build_plan([], full=True)
     assert all(plan['required'].values())
+    assert ci.FRAMEWORKS == ('vue3',)
+    assert len(plan['frontend_matrix']['include']) == FRONTEND_PROJECT_COUNT
+    assert plan['frontend_matrix']['include'] == [
+        {'framework': 'vue3', 'target': 'mobile'},
+        {'framework': 'vue3', 'target': 'web'},
+    ]
+    assert plan['network_frameworks'] == ['vue3']
     assert len(plan['e2e_matrix']['include']) == FULL_E2E_COMBINATION_COUNT
+    assert {(row['framework'], row['database'], row['python']) for row in plan['e2e_matrix']['include']} == {
+        ('vue3', database, version) for database in ('mysql', 'postgresql') for version in ci.PYTHON_VERSIONS
+    }
     assert {row['python'] for row in plan['e2e_matrix']['include']} == {'3.10', '3.11', '3.12', '3.13', '3.14'}
+
+
+@pytest.mark.parametrize('full', [False, True])
+@pytest.mark.parametrize(
+    'path',
+    [
+        '.github/workflows/ci-frontend.yml',
+        'ruoyi-fastapi-frontend/shared-config.json',
+        'ruoyi-fastapi-frontend/obsolete/web/src/example.js',
+        'ruoyi-fastapi-backend/plugins/core/frontend.py',
+        'ruoyi-fastapi-test/time-contract/fixtures.json',
+    ],
+)
+def test_shared_and_unknown_frontend_paths_only_select_vue3(path: str, *, full: bool) -> None:
+    """共享变更及已删除工程路径不能生成不再支持的框架任务。"""
+    plan = ci.build_plan([path], full=full)
+    assert len(plan['frontend_matrix']['include']) == FRONTEND_PROJECT_COUNT
+    assert {row['framework'] for row in plan['frontend_matrix']['include']} == {'vue3'}
+    assert {row['framework'] for row in plan['e2e_matrix']['include']} == {'vue3'}
+    expected_count = FULL_E2E_COMBINATION_COUNT if full else STANDARD_E2E_COMBINATION_COUNT
+    assert len(plan['e2e_matrix']['include']) == expected_count
 
 
 @pytest.mark.parametrize('result', ['failure', 'cancelled', 'skipped', None])

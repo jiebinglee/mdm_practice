@@ -14,16 +14,13 @@ pytestmark = pytest.mark.e2e
 
 
 async def file_action_row(view: SystemPage, name: str) -> Locator:
-    """Element UI 的固定操作列另有一张可见表格。"""
-    fixed = view.page.locator('.el-table__fixed-right:visible .el-table__row').filter(
-        has=view.page.get_by_text(name, exact=True)
-    )
-    return fixed if await fixed.count() else view.row(name)
+    """使用 Element Plus 主表格的目标行。"""
+    return view.row(name)
 
 
 async def select_file(view: SystemPage, name: str) -> None:
     """点击可见复选框外层，核验隐藏原生控件的选择状态。"""
-    selection = view.row(name).locator('.el-checkbox, .ant-checkbox-wrapper')
+    selection = view.row(name).locator('.el-checkbox')
     await selection.click()
     await expect(selection.locator('input')).to_be_checked()
 
@@ -89,7 +86,7 @@ async def test_file_management_lifecycle(browser_harness: BrowserHarness, access
     file_id = payload['fileId']
     try:
         await view.open('/system/file', '/system/file/list')
-        toolbar = view.page.locator('.app-main .table-toolbar' if view.is_react else '.app-main .el-row.mb8')
+        toolbar = view.page.locator('.app-main .el-row.mb8')
         found = await view.search({'文件名称': name})
         assert found['total'] == 1
         record = view.record(found, 'fileId', file_id)

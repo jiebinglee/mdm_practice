@@ -1,8 +1,6 @@
 from plugins.core.frontend import FrontendFramework, PluginFrontendFrameworkResolver  # noqa: F401
 
 from .frontend_api import PluginFrontendApiScaffoldTemplateBuilder
-from .frontend_react import PluginReactFrontendScaffoldTemplateBuilder
-from .frontend_vue2 import PluginVue2FrontendScaffoldTemplateBuilder
 from .naming import PluginScaffoldNaming
 
 
@@ -256,7 +254,7 @@ class PluginFrontendScaffoldTemplateBuilder:
     def view_filename(cls, frontend_framework: FrontendFramework = 'vue3') -> str:
         """验证框架并返回该宿主加载的页面文件名。"""
         cls._resolve_builder(frontend_framework)
-        return 'index.jsx' if frontend_framework == 'react' else 'index.vue'
+        return 'index.vue'
 
     @classmethod
     def build_view(cls, plugin_id: str, frontend_framework: FrontendFramework = 'vue3') -> str:
@@ -277,15 +275,7 @@ class PluginFrontendScaffoldTemplateBuilder:
     @staticmethod
     def _resolve_builder(
         frontend_framework: FrontendFramework,
-    ) -> (
-        type[PluginVue2FrontendScaffoldTemplateBuilder]
-        | type[PluginVue3FrontendScaffoldTemplateBuilder]
-        | type[PluginReactFrontendScaffoldTemplateBuilder]
-    ):
-        if frontend_framework == 'vue2':
-            return PluginVue2FrontendScaffoldTemplateBuilder
+    ) -> type[PluginVue3FrontendScaffoldTemplateBuilder]:
         if frontend_framework == 'vue3':
             return PluginVue3FrontendScaffoldTemplateBuilder
-        if frontend_framework == 'react':
-            return PluginReactFrontendScaffoldTemplateBuilder
-        raise ValueError(f'暂不支持前端框架 {frontend_framework} 的源码模板，目前仅支持 vue2、vue3、react')
+        raise ValueError(f'不支持前端框架 {frontend_framework} 的源码模板，目前仅支持 vue3')

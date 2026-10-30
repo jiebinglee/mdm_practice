@@ -4,20 +4,16 @@ import { fileURLToPath } from 'node:url'
 // 根据脚本位置定位仓库，支持任意检出目录和调用目录。
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const frameworks = process.argv.slice(2)
-if (frameworks.some((framework) => !['vue2', 'vue3', 'react'].includes(framework))) {
-  console.error('Usage: node run-host-timezones.mjs [vue2] [vue3] [react]')
+if (frameworks.some((framework) => framework !== 'vue3')) {
+  console.error('Usage: node run-host-timezones.mjs [vue3]')
   process.exit(1)
 }
-const paths = (frameworks.length ? frameworks : ['vue2', 'vue3', 'react']).flatMap((framework) => {
-  const base = `ruoyi-fastapi-frontend/${framework}`
-  const extension = framework === 'vue2' ? 'mjs' : 'js'
-  const mobileExtension = framework === 'react' ? 'mjs' : extension
-  return [
-    `${base}/web/tests/time/time.test.${extension}`,
-    `${base}/mobile/tests/time.test.${mobileExtension}`,
-    `${base}/mobile/tests/time-polyfill.test.${mobileExtension}`
-  ]
-})
+const base = 'ruoyi-fastapi-frontend/vue3'
+const paths = [
+  `${base}/web/tests/time/time.test.js`,
+  `${base}/mobile/tests/time.test.js`,
+  `${base}/mobile/tests/time-polyfill.test.js`
+]
 for (const zone of ['UTC', 'Asia/Shanghai', 'America/New_York']) {
   const result = spawnSync(process.execPath, ['--test', ...paths], {
     cwd: root,

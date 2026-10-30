@@ -108,7 +108,7 @@ def render_case(db_type: str, category: str, web_type: str) -> dict[str, str]:
 
 
 @pytest.mark.parametrize('category', ['crud', 'tree', 'sub'])
-@pytest.mark.parametrize('web_type', ['element-ui', 'element-plus'])
+@pytest.mark.parametrize('web_type', ['element-plus'])
 def test_generated_frontend_contains_business_files_and_reuses_project_time_modules(
     category: str, web_type: str
 ) -> None:

@@ -64,7 +64,6 @@ jobs:
     uses: ./.github/workflows/ci-frontend.yml
     with:
       matrix_json: ${{ needs.plan.outputs.frontend_matrix }}
-      full: ${{ needs.plan.outputs.full == 'true' }}
 
   integration:
     name: Integration

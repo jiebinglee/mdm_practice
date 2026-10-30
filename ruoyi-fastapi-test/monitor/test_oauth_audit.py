@@ -49,23 +49,19 @@ async def test_oauth_audit_page(browser_harness: BrowserHarness) -> None:
         assert result['code'] == HTTPStatus.OK, result
         events = result['rows']
         assert len(events) == 1 and events[0]['eventType'] == 'client_created', result
-        row = page.locator('.el-table__body-wrapper tbody tr, .ant-table-tbody > .ant-table-row:visible')
+        row = page.locator('.el-table__body-wrapper tbody tr')
         await expect(row).to_have_count(1)
         await expect(row).to_contain_text('应用已注册')
         await expect(row).to_contain_text('已完成')
-        await (
-            page.locator('.el-table tbody tr, .ant-table-tbody > .ant-table-row:visible')
-            .get_by_role('button', name=button_name('查看'))
-            .click()
-        )
-        drawer = page.locator('.el-drawer:visible, .ant-drawer-open:visible')
+        await page.locator('.el-table tbody tr').get_by_role('button', name=button_name('查看')).click()
+        drawer = page.locator('.el-drawer:visible')
         await expect(drawer).to_contain_text(client_id)
         await drawer.get_by_text('查看排障信息', exact=True).click()
         await expect(drawer.get_by_text('事件 ID', exact=True).locator('xpath=following-sibling::dd[1]')).to_have_text(
             str(events[0]['auditId'])
         )
         await expect(drawer).to_contain_text('client_created')
-        await drawer.locator('.el-drawer__close-btn, .ant-drawer-close').click()
+        await drawer.locator('.el-drawer__close-btn').click()
         async with page.expect_download() as pending:
             async with page.expect_response(
                 lambda response: urlparse(response.url).path.endswith('/monitor/oauth/audit/export')

@@ -518,10 +518,10 @@ def test_plugin_create_frontend_framework_override_json_output_has_stable_contra
     completed = run_cli_command(
         'plugin',
         'create',
-        'contract_vue2',
+        'contract_vue3',
         '--dry-run',
         '--frontend-only',
-        '--frontend-framework=vue2',
+        '--frontend-framework=vue3',
         '--env=dev',
         '--output=json',
     )
@@ -530,9 +530,9 @@ def test_plugin_create_frontend_framework_override_json_output_has_stable_contra
     view_payload = next(file for file in payload['files'] if str(file['path']).endswith('/views/index.vue'))
     assert completed.returncode == SUCCESS
     assert payload['ok'] is True
-    assert payload['frontendFramework'] == 'vue2'
-    assert FRONTEND_ROOT.parents[1] / 'vue2/web/plugins/contract_vue2' in [Path(path) for path in payload['targetDirs']]
-    assert 'slot="header"' in view_payload['content']
+    assert payload['frontendFramework'] == 'vue3'
+    assert FRONTEND_ROOT / 'plugins/contract_vue3' in [Path(path) for path in payload['targetDirs']]
+    assert '<template #header>' in view_payload['content']
 
 
 def test_plugin_create_rejects_framework_outside_fixed_choices(

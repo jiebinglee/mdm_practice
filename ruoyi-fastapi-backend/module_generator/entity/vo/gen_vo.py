@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 from pydantic_validation_decorator import NotBlank
 
@@ -25,7 +25,9 @@ class GenTableBaseModel(BaseModel):
     sub_table_fk_name: str | None = Field(default=None, description='子表关联的外键名')
     class_name: str | None = Field(default=None, description='实体类名称')
     tpl_category: str | None = Field(default=None, description='使用的模板（crud单表操作 tree树表操作）')
-    tpl_web_type: str | None = Field(default=None, description='前端模板类型（element-ui、element-plus、react-antd）')
+    tpl_web_type: Literal['element-plus'] = Field(
+        default='element-plus', description='前端模板类型（Vue3 Element Plus）'
+    )
     package_name: str | None = Field(default=None, description='生成包路径')
     module_name: str | None = Field(default=None, description='生成模块名')
     business_name: str | None = Field(default=None, description='生成业务名')
@@ -40,6 +42,14 @@ class GenTableBaseModel(BaseModel):
     update_by: str | None = Field(default=None, description='更新者')
     update_time: ApiUtcDateTime | None = Field(default=None, description='更新时间')
     remark: str | None = Field(default=None, description='备注')
+
+    @field_validator('tpl_web_type', mode='before')
+    @classmethod
+    def normalize_tpl_web_type(cls, value: object) -> object:
+        """兼容数据库中的旧模板配置，统一生成 Vue3，不静默接受未知类型。"""
+        if value in (None, '', 'element-ui', 'react-antd'):
+            return 'element-plus'
+        return value
 
     @NotBlank(field_name='table_name', message='表名称不能为空')
     def get_table_name(self) -> str | None:

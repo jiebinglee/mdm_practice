@@ -11,10 +11,20 @@ from utils.template_util import TemplateInitializer, TemplateUtils
 MAX_GENERATED_LINE_LENGTH = 120
 
 
+@pytest.fixture(autouse=True)
+def mysql_template_dialect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """为本模块的 MySQL 列样例固定方言，专项测试仍可显式覆盖。"""
+    monkeypatch.setattr(
+        type(database.DataBaseConfig),
+        'get_source',
+        lambda _self, _name=None: SimpleNamespace(db_type='mysql'),
+    )
+
+
 def _gen_table(
     *,
     gen_view: bool,
-    tpl_web_type: str = 'element-ui',
+    tpl_web_type: str = 'element-plus',
     tpl_category: str = 'crud',
 ) -> GenTableModel:
     columns = [
@@ -102,7 +112,9 @@ def test_gen_table_params_accepts_frontend_string_switch(value: str, expected: b
 @pytest.mark.parametrize(
     ('tpl_web_type', 'view_template'),
     [
-        ('element-ui', 'vue/view.vue.jinja2'),
+        ('element-ui', 'vue/v3/view.vue.jinja2'),
+        ('react-antd', 'vue/v3/view.vue.jinja2'),
+        ('', 'vue/v3/view.vue.jinja2'),
         ('element-plus', 'vue/v3/view.vue.jinja2'),
     ],
 )
@@ -113,6 +125,7 @@ def test_template_list_and_context_include_optional_view(tpl_web_type: str, view
     context = TemplateUtils.prepare_context(gen_table)
 
     assert view_template in templates
+    assert gen_table.tpl_web_type == 'element-plus'
     assert context['genView'] is True
     assert TemplateUtils.get_file_name(view_template, gen_table) == 'frontend/views/test/item/view.vue'
 
@@ -123,11 +136,11 @@ def test_template_list_omits_view_when_disabled() -> None:
     templates = TemplateUtils.get_template_list(gen_table)
     context = TemplateUtils.prepare_context(gen_table)
 
-    assert 'vue/view.vue.jinja2' not in templates
+    assert 'vue/v3/view.vue.jinja2' not in templates
     assert context['genView'] is False
 
 
-@pytest.mark.parametrize('tpl_web_type', ['element-ui', 'element-plus'])
+@pytest.mark.parametrize('tpl_web_type', ['element-ui', 'react-antd', 'element-plus'])
 @pytest.mark.parametrize('tpl_category', ['crud', 'tree'])
 def test_detail_templates_render_with_list_integration(tpl_web_type: str, tpl_category: str) -> None:
     gen_table = _gen_table(gen_view=True, tpl_web_type=tpl_web_type, tpl_category=tpl_category)
@@ -137,14 +150,30 @@ def test_detail_templates_render_with_list_integration(tpl_web_type: str, tpl_ca
 
     rendered = {template: env.get_template(template).render(**context) for template in templates}
     index_name = 'index-tree.vue.jinja2' if tpl_category == 'tree' else 'index.vue.jinja2'
-    index_template = f'vue{"/v3" if tpl_web_type == "element-plus" else ""}/{index_name}'
-    view_template = f'vue{"/v3" if tpl_web_type == "element-plus" else ""}/view.vue.jinja2'
+    index_template = f'vue/v3/{index_name}'
+    view_template = 'vue/v3/view.vue.jinja2'
 
     assert 'handleViewData' in rendered[index_template]
     assert '<item-view-drawer ref="itemViewRef" />' in rendered[index_template]
     assert '测试项详情' in rendered[view_template]
     assert 'getItem(itemId)' in rendered[view_template]
     assert 'sys_normal_disable' in rendered[view_template]
+
+
+@pytest.mark.parametrize('value', [None, '', 'element-ui', 'react-antd', 'element-plus'])
+def test_generator_normalizes_stored_templates_to_vue3(value: str | None) -> None:
+    table = GenTableModel(tplWebType=value)
+    assert table.tpl_web_type == 'element-plus'
+    assert table.model_dump(by_alias=True)['tplWebType'] == 'element-plus'
+
+
+def test_generator_exposes_only_element_plus_and_rejects_unknown_template() -> None:
+    assert GenTableModel().tpl_web_type == 'element-plus'
+    schema = GenTableModel.model_json_schema()
+    model_schema = schema['$defs'][schema['$ref'].rsplit('/', 1)[-1]]
+    assert model_schema['properties']['tplWebType']['const'] == 'element-plus'
+    with pytest.raises(ValueError):
+        GenTableModel(tplWebType='unknown-ui')
 
 
 @pytest.mark.asyncio

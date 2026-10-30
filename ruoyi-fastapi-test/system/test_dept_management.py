@@ -11,7 +11,7 @@ pytestmark = pytest.mark.e2e
 
 @pytest.mark.asyncio
 async def test_dept_management_page(browser_harness: BrowserHarness) -> None:
-    """创建真实部门，覆盖两套部门树控件及保存后的负责人字段。"""
+    """创建真实部门，覆盖部门树控件及保存后的负责人字段。"""
     view = SystemPage()
     await view.setup(browser_harness)
     resource = '/system/dept'

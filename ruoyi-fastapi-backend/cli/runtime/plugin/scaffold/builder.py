@@ -63,7 +63,7 @@ class PluginScaffoldBuilder:
         :param job: 是否创建定时任务示例
         :param config: 是否创建配置项示例
         :param test: 是否创建测试样例
-        :param frontend_framework: 目标前端框架标识，auto 表示自动识别；源码模板支持 vue2、vue3、react
+        :param frontend_framework: 目标前端框架标识，auto 表示自动识别；仅支持 vue3
         :return: 插件模板写入计划
         """
         self._validate_plugin_id(plugin_id)

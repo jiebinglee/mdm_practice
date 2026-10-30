@@ -23,13 +23,10 @@ class BasePageTest:
         await self.page.goto(url)
 
     async def select_department(self, dialog: Locator, label: str, department: str) -> None:
-        """兼容 Element Plus 树选择器与 Vue2 的 vue-treeselect。"""
+        """通过 Element Plus 树选择器选择部门。"""
         field = dialog.locator('.el-form-item').filter(has_text=label)
-        await field.locator('.el-select__wrapper, .vue-treeselect__control').click()
-        choices = self.page.locator(
-            '.el-select-dropdown:visible .el-tree-node__content .el-select-dropdown__item, '
-            '.vue-treeselect__menu .vue-treeselect__label:visible'
-        )
+        await field.locator('.el-select__wrapper').click()
+        choices = self.page.locator('.el-select-dropdown:visible .el-tree-node__content .el-select-dropdown__item')
         await choices.filter(has_text=re.compile(rf'^\s*{re.escape(department)}(?:\s*\(\d+\))?\s*$')).click()
 
     async def wait_for_page_title(self, title_text: str, timeout: int = 10000) -> None:

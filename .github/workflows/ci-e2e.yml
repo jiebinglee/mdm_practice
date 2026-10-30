@@ -21,7 +21,7 @@ jobs:
     env:
       COMPOSE_PROJECT_NAME: ruoyi-ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       COMPOSE_FILE: ${{ github.workspace }}/ruoyi-fastapi-test/target/e2e/compose.json
-      FRONTEND_FRAMEWORK: ${{ matrix.framework }}
+      FRONTEND_FRAMEWORK: vue3
       E2E_OUTPUT_DIR: ${{ github.workspace }}/ruoyi-fastapi-test/target/e2e/browser
     steps:
       - uses: actions/checkout@v5
@@ -43,7 +43,7 @@ jobs:
       - name: Generate isolated Compose project
         run: |
           python ruoyi-fastapi-test/prepare_e2e_compose.py \
-            --database '${{ matrix.database }}' --framework '${{ matrix.framework }}' \
+            --database '${{ matrix.database }}' --framework vue3 \
             --python-version '${{ matrix.python }}' --project "$COMPOSE_PROJECT_NAME" \
             --output "$COMPOSE_FILE"
           docker compose config --quiet
@@ -51,12 +51,12 @@ jobs:
       - name: Build frontend with reusable layers
         uses: docker/build-push-action@v6
         with:
-          context: ruoyi-fastapi-frontend/${{ matrix.framework }}/web
-          file: ruoyi-fastapi-frontend/${{ matrix.framework }}/web/Dockerfile
+          context: ruoyi-fastapi-frontend/vue3/web
+          file: ruoyi-fastapi-frontend/vue3/web/Dockerfile
           load: true
           tags: ${{ env.COMPOSE_PROJECT_NAME }}-ruoyi-frontend:ci
-          cache-from: type=gha,scope=e2e-frontend-${{ matrix.framework }}
-          cache-to: type=gha,scope=e2e-frontend-${{ matrix.framework }},mode=max
+          cache-from: type=gha,scope=e2e-frontend-vue3
+          cache-to: type=gha,scope=e2e-frontend-vue3,mode=max
       - name: Select database Dockerfile
         id: database
         env:

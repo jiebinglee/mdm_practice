@@ -122,7 +122,7 @@ def test_build_vendor_records_normalized_hashes_and_versions(tmp_path: Path) -> 
     assert sdk.check(project)['status'] == 'current'
 
 
-@pytest.mark.parametrize('frontend_framework', ['vue2', 'vue3', 'react', 'custom_ui-1'])
+@pytest.mark.parametrize('frontend_framework', ['vue3'])
 def test_sdk_workspace_records_selected_source(tmp_path: Path, frontend_framework: str) -> None:
     """校验 SDK 来源记录使用当前项目名及所选的 Web 工程。"""
     sdk = write_source(tmp_path / 'ruoyi-fastapi-frontend' / frontend_framework / 'web')
@@ -137,13 +137,19 @@ def test_sdk_workspace_records_selected_source(tmp_path: Path, frontend_framewor
 
 def test_sdk_preserves_independent_host_framework_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """校验离线 SDK 在独立工程中保留环境框架提示，标准目录保留自身身份。"""
-    monkeypatch.setenv('RUOYI_PLUGIN_FRONTEND_FRAMEWORK', 'custom_ui-1')
+    monkeypatch.setenv('RUOYI_PLUGIN_FRONTEND_FRAMEWORK', 'vue3')
     sdk = write_source(tmp_path / 'independent-frontend')
     metadata = json.loads(sdk.build_vendor_files()[SDK_METADATA])
-    assert metadata['source']['directory'] == 'ruoyi-fastapi-frontend/custom_ui-1/web/src/utils'
-    standard_sdk = write_source(tmp_path / 'ruoyi-fastapi-frontend/react/web')
+    assert metadata['source']['directory'] == 'ruoyi-fastapi-frontend/vue3/web/src/utils'
+    standard_sdk = write_source(tmp_path / 'ruoyi-fastapi-frontend/vue3/web')
     standard_metadata = json.loads(standard_sdk.build_vendor_files()[SDK_METADATA])
-    assert standard_metadata['source']['directory'] == 'ruoyi-fastapi-frontend/react/web/src/utils'
+    assert standard_metadata['source']['directory'] == 'ruoyi-fastapi-frontend/vue3/web/src/utils'
+
+
+@pytest.mark.parametrize('framework', ['vue2', 'react', 'custom_ui-1'])
+def test_sdk_rejects_unsupported_host(tmp_path: Path, framework: str) -> None:
+    with pytest.raises(ValueError, match='仅支持 vue3'):
+        write_source(tmp_path / 'ruoyi-fastapi-frontend' / framework / 'web')
 
 
 @pytest.mark.parametrize(

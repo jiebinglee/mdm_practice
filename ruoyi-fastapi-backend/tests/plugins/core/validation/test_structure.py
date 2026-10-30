@@ -23,10 +23,7 @@ def load_discovered_plugin(backend_root: Path, plugin_id: str) -> DiscoveredPlug
 @pytest.mark.parametrize(
     ('framework', 'suffix', 'expected_ok'),
     [
-        ('vue2', '.vue', True),
         ('vue3', '.vue', True),
-        ('react', '.jsx', True),
-        ('react', '.vue', False),
         ('vue3', '.jsx', False),
     ],
 )
@@ -38,7 +35,7 @@ def test_structure_checker_matches_host_page_type(
     backend_root = tmp_path / 'ruoyi-fastapi-backend'
     frontend_root = tmp_path / 'ruoyi-fastapi-frontend' / framework / 'web' if standard_layout else tmp_path / 'host'
     frontend_root.mkdir(parents=True)
-    dependencies = {'react': '19.2.0'} if framework == 'react' else {'vue': f'{framework[-1]}.0.0'}
+    dependencies = {'vue': '3.0.0'}
     (frontend_root / 'package.json').write_text(json.dumps({'dependencies': dependencies}), encoding='utf-8')
     plugin_root = backend_root / 'plugins' / 'demo'
     write_manifest(

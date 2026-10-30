@@ -25,11 +25,6 @@ class SystemPage(BasePageTest):
     api: APIRequestContext
     list_path: str
 
-    @property
-    def is_react(self) -> bool:
-        """根据本轮框架使用真实组件选择器，不改变业务断言。"""
-        return Config.frontend_framework == 'react'
-
     async def setup(self, harness: BrowserHarness) -> None:
         """复用浏览器登录，并保留仅用于持久化核验和失败清理的 API 客户端。"""
         await super().setup(harness)
@@ -38,23 +33,17 @@ class SystemPage(BasePageTest):
     @property
     def form(self) -> Locator:
         """当前页面可见的查询表单。"""
-        selector = '.ant-form' if self.is_react else '.el-form'
-        return self.page.locator(f'.app-main .app-container {selector}:visible').first
+        return self.page.locator('.app-main .app-container .el-form:visible').first
 
     @property
     def dialog(self) -> Locator:
-        """当前组件库的可见编辑弹窗。"""
-        return self.page.locator('.ant-modal:visible' if self.is_react else '.el-dialog:visible')
+        """Element Plus 的可见编辑弹窗。"""
+        return self.page.locator('.el-dialog:visible')
 
     @property
     def rows(self) -> Locator:
-        """主表格数据行，不重复计算 Element UI 固定列的镜像表格。"""
-        selector = (
-            '.app-main .ant-table-tbody > .ant-table-row:visible'
-            if self.is_react
-            else '.el-table__body-wrapper:visible .el-table__row'
-        )
-        return self.page.locator(selector)
+        """当前可见的 Element Plus 主表格数据行。"""
+        return self.page.locator('.el-table__body-wrapper:visible .el-table__row')
 
     def row(self, identity: str) -> Locator:
         """按当前测试记录的精确文本定位，避免误操作列表第一条业务数据。"""
@@ -62,16 +51,15 @@ class SystemPage(BasePageTest):
 
     @staticmethod
     def button(scope: Locator | Page, label: str) -> Locator:
-        """图标字体可能进入 Vue2 可访问名称，因此按完整文字后缀匹配。"""
-        # Ant Design 的双字按钮可能在两字之间加入空格。
+        """按完整文字后缀定位按钮，容许图标和空白。"""
         return scope.get_by_role('button', name=button_name(label))
 
     def field(self, scope: Locator, label: str) -> Locator:
-        """两种组件库都按真实表单标签定位，不依赖 Vue3 自动生成的 input id。"""
-        label_selector = '.ant-form-item-label' if self.is_react else '.el-form-item__label'
-        field_selector = '.ant-form-item' if self.is_react else '.el-form-item'
-        labels = self.page.locator(label_selector).filter(has_text=re.compile(rf'^\s*{re.escape(label)}\s*[:：]?\s*$'))
-        return scope.locator(f'{field_selector}:visible').filter(has=labels)
+        """按真实表单标签定位，不依赖自动生成的 input id。"""
+        labels = self.page.locator('.el-form-item__label').filter(
+            has_text=re.compile(rf'^\s*{re.escape(label)}\s*[:：]?\s*$')
+        )
+        return scope.locator('.el-form-item:visible').filter(has=labels)
 
     def input(self, scope: Locator, label: str) -> Locator:
         """返回字段内的文本、密码或数字输入框。"""
@@ -82,46 +70,32 @@ class SystemPage(BasePageTest):
         await self.input(scope, label).fill(value)
 
     async def choose(self, scope: Locator, label: str, option: str) -> None:
-        """选择两种 Element 组件库中的下拉选项。"""
-        await self.field(scope, label).locator('.ant-select' if self.is_react else '.el-select').click()
-        selector = (
-            '.ant-select-dropdown:visible .ant-select-item-option'
-            if self.is_react
-            else '.el-select-dropdown:visible .el-select-dropdown__item'
+        """选择 Element Plus 的下拉选项。"""
+        await self.field(scope, label).locator('.el-select').click()
+        choices = self.page.locator('.el-select-dropdown:visible .el-select-dropdown__item').filter(
+            has_text=re.compile(rf'^\s*{re.escape(option)}\s*$')
         )
-        choices = self.page.locator(selector).filter(has_text=re.compile(rf'^\s*{re.escape(option)}\s*$'))
         await choices.click()
 
     async def radio(self, scope: Locator, label: str, option: str) -> None:
         """选择并核对单选项。"""
         choice = (
-            self.field(scope, label)
-            .locator('.ant-radio-wrapper' if self.is_react else '.el-radio')
-            .filter(has_text=re.compile(rf'^\s*{re.escape(option)}\s*$'))
+            self.field(scope, label).locator('.el-radio').filter(has_text=re.compile(rf'^\s*{re.escape(option)}\s*$'))
         )
         await choice.click()
         await expect(choice.locator('input[type=radio]')).to_be_checked()
 
     async def choose_department(self, scope: Locator, label: str, department: str) -> None:
-        """覆盖 Element、vue-treeselect 和 Ant Design 的真实树节点。"""
-        if self.is_react:
-            await self.field(scope, label).locator('.ant-select').click()
-            await (
-                self.page.locator('.ant-select-dropdown:visible .ant-select-tree-title')
-                .get_by_text(department, exact=True)
-                .click()
-            )
-            return
-        await self.field(scope, label).locator('.el-select__wrapper, .vue-treeselect__control').click()
-        node = self.page.locator(
-            '.el-select-dropdown:visible .el-tree-node__content .el-select-dropdown__item, '
-            '.vue-treeselect__menu .vue-treeselect__label:visible'
-        ).filter(has_text=re.compile(rf'^\s*{re.escape(department)}(?:\s*\(\d+\))?\s*$'))
+        """选择 Element Plus 的真实部门树节点。"""
+        await self.field(scope, label).locator('.el-select__wrapper').click()
+        node = self.page.locator('.el-select-dropdown:visible .el-tree-node__content .el-select-dropdown__item').filter(
+            has_text=re.compile(rf'^\s*{re.escape(department)}(?:\s*\(\d+\))?\s*$')
+        )
         await node.click()
 
     @staticmethod
     def matches(response: Response, path: str, method: str) -> bool:
-        """同时匹配请求方法和 API 路径，兼容两套开发代理前缀。"""
+        """同时匹配请求方法和 API 路径，兼容开发及 Docker 代理前缀。"""
         return response.request.method == method and urlsplit(response.url).path.rstrip('/').endswith(path)
 
     @staticmethod
@@ -140,12 +114,8 @@ class SystemPage(BasePageTest):
 
     async def rendered(self) -> None:
         """等待列表遮罩消失；具体行和值由调用方继续断言。"""
-        # React Activity 会保留离场页面的 DOM，需等切换完成再绑定其中的控件。
-        await expect(self.page.locator('.app-main.page-leave')).to_have_count(0)
-        loading = '.ant-spin-spinning' if self.is_react else '.el-loading-mask'
-        table = '.ant-table' if self.is_react else '.el-table'
-        await expect(self.page.locator(f'.app-main {loading}:visible')).to_have_count(0)
-        await expect(self.page.locator(f'.app-main {table}:visible').first).to_be_visible()
+        await expect(self.page.locator('.app-main .el-loading-mask:visible')).to_have_count(0)
+        await expect(self.page.locator('.app-main .el-table:visible').first).to_be_visible()
 
     async def open(self, route: str, list_path: str) -> dict:
         """打开真实管理页面并核对首个列表响应。"""
@@ -176,8 +146,8 @@ class SystemPage(BasePageTest):
         return self.dialog
 
     async def close_dialog(self) -> None:
-        """点击弹窗页脚关闭按钮，避开 Ant Design 同名的右上角图标。"""
-        await self.button(self.dialog.locator('.el-dialog__footer, .ant-modal-footer'), '关闭').click()
+        """点击弹窗页脚关闭按钮。"""
+        await self.button(self.dialog.locator('.el-dialog__footer'), '关闭').click()
         await expect(self.dialog).to_have_count(0)
 
     async def edit(self, identity: str, resource: str, record_id: int) -> Locator:
@@ -204,7 +174,7 @@ class SystemPage(BasePageTest):
         return payload
 
     async def row_action(self, identity: str, action: str) -> None:
-        """兼容 Vue2 文本/更多菜单和 Vue3 用户角色页的图标按钮。"""
+        """定位文本、更多菜单或用户角色页的图标操作按钮。"""
         row = self.row(identity)
         named = self.button(row, action)
         if await named.count():
@@ -214,26 +184,20 @@ class SystemPage(BasePageTest):
         if action not in {'修改', '删除'} and await more.count():
             await more.hover()
             await (
-                self.page.locator(
-                    '.ant-dropdown:visible .ant-dropdown-menu-item'
-                    if self.is_react
-                    else '.el-dropdown-menu:visible .el-dropdown-menu__item'
-                )
+                self.page.locator('.el-dropdown-menu:visible .el-dropdown-menu__item')
                 .filter(has_text=re.compile(rf'^\s*{re.escape(action)}\s*$'))
                 .click()
             )
             return
-        # 两套源码中操作顺序固定，Vue3 的 tooltip 不提供按钮 accessible name。
+        # 用户角色页的 tooltip 不提供按钮 accessible name，按源码固定顺序定位。
         positions = {'修改': 0, '删除': 1, '重置密码': 2, '数据权限': 2, '分配角色': 3, '分配用户': 3}
         await row.get_by_role('button').nth(positions[action]).click()
 
     async def toggle_status(self, identity: str, resource: str, record_id: int) -> None:
         """停用再启用，并逐次重读保存状态，不依赖成功 toast。"""
         for status in ('1', '0'):
-            await self.row(identity).locator('.ant-switch' if self.is_react else '.el-switch').click()
-            confirmation = self.page.locator(
-                '.ant-modal-confirm:visible' if self.is_react else '.el-message-box:visible'
-            )
+            await self.row(identity).locator('.el-switch').click()
+            confirmation = self.page.locator('.el-message-box:visible')
             await self.action(
                 confirmation.get_by_role('button', name=re.compile(r'^确\s*定$')).click,
                 f'{resource}/changeStatus',
@@ -244,7 +208,7 @@ class SystemPage(BasePageTest):
 
     async def confirm_refresh(self, path: str, method: str = 'DELETE') -> dict:
         """确认危险操作，并等待操作及其列表刷新均成功。"""
-        confirmation = self.page.locator('.ant-modal-confirm:visible' if self.is_react else '.el-message-box:visible')
+        confirmation = self.page.locator('.el-message-box:visible')
         await expect(confirmation).to_be_visible()
         async with self.page.expect_response(lambda response: self.matches(response, self.list_path, 'GET')) as listed:
             await self.action(confirmation.get_by_role('button', name=re.compile(r'^确\s*定$')).click, path, method)

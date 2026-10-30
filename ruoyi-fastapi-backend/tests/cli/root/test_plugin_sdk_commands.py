@@ -93,13 +93,11 @@ def test_sdk_cli_bad_source_is_json_and_nonzero(project: Path, tmp_path: Path) -
     assert json.loads(result.stdout)['ok'] is False
 
 
-@pytest.mark.parametrize(
-    ('framework', 'selected_framework'), [('auto', 'vue3'), ('vue2', 'vue2'), ('vue3', 'vue3'), ('react', 'react')]
-)
+@pytest.mark.parametrize(('framework', 'selected_framework'), [('auto', 'vue3'), ('vue3', 'vue3')])
 def test_sdk_cli_selects_supported_framework_from_frontend_container(
     project: Path, framework: str, selected_framework: str
 ) -> None:
-    """校验 SDK 更新和检查命令均接受四个固定框架选项。"""
+    """校验 SDK 更新和检查命令只接受自动识别和 Vue3。"""
     result = CliRunner().invoke(
         sdk_app(),
         [
@@ -137,7 +135,7 @@ def test_sdk_cli_selects_supported_framework_from_frontend_container(
 
 
 @pytest.mark.parametrize('operation', ['check', 'update'])
-@pytest.mark.parametrize('framework', ['custom_ui-1', '../react', 'Vue3'])
+@pytest.mark.parametrize('framework', ['vue2', 'react', 'custom_ui-1', '../react', 'Vue3'])
 def test_sdk_cli_rejects_unsupported_framework_before_file_operations(
     project: Path, operation: str, framework: str
 ) -> None:
@@ -158,7 +156,7 @@ def test_sdk_cli_rejects_unsupported_framework_before_file_operations(
     assert result.exit_code == ARGUMENT_ERROR
     assert 'Invalid value' in result.output
     assert framework in result.output
-    assert 'auto' in result.output and 'vue2' in result.output and 'vue3' in result.output
+    assert 'auto' in result.output and 'vue3' in result.output
     assert before == {path.relative_to(project): path.read_bytes() for path in project.rglob('*') if path.is_file()}
 
 
@@ -167,7 +165,8 @@ def test_sdk_cli_help_displays_fixed_frontend_framework_choices(operation: str) 
     """校验两个 SDK 命令的帮助均展示固定框架选项。"""
     result = CliRunner().invoke(sdk_app(), ['sdk', operation, '--help'], terminal_width=160)
     assert result.exit_code == SUCCESS
-    assert 'auto|vue2|vue3|react' in result.output
+    assert 'auto|vue3' in result.output
+    assert 'vue2' not in result.output and 'react' not in result.output
 
 
 def test_sdk_cli_rejects_removed_frontend_version_option(project: Path) -> None:

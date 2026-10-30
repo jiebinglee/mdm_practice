@@ -38,15 +38,6 @@ EXPECTED_AI_PYTHON_DEPENDENCIES = [
     'openai==2.52.0',
     'portkey-ai==2.3.4',
 ]
-EXPECTED_AI_VUE2_NPM_DEPENDENCIES = [
-    '@antv/infographic==0.2.20',
-    '@terrastruct/d2==0.1.33',
-    'katex==0.16.28',
-    'markstream-vue2==2.0.19',
-    'mermaid==11.17.2',
-    'shiki==3.23.0',
-    'stream-diffs==0.0.2',
-]
 EXPECTED_AI_VUE3_NPM_DEPENDENCIES = [
     '@antv/infographic==0.2.20',
     '@terrastruct/d2==0.1.33',
@@ -82,13 +73,11 @@ def test_ai_plugin_template_can_be_discovered() -> None:
     assert plugin.manifest.config.items == []
 
 
-def test_ai_plugin_vue2_frontend_dependencies() -> None:
-    """校验 Vue 2 项目的 AI 插件声明 Vue 2 专属前端依赖。"""
+def test_ai_plugin_only_declares_vue3_frontend_dependencies() -> None:
+    """校验内置 AI 插件不再提供旧框架依赖。"""
     plugin = PluginScanner(BACKEND_ROOT / 'plugins').load_manifest(BACKEND_ROOT / 'plugins' / 'ai' / 'plugin.yaml')
 
-    dependencies = plugin.manifest.dependencies.resolve_frontend('vue2')
-    assert set(dependencies.npm) == set(EXPECTED_AI_VUE2_NPM_DEPENDENCIES)
-    assert dependencies.npm_dev == []
+    assert set(plugin.manifest.dependencies.frontend) == {'vue3'}
 
 
 def test_ai_plugin_vue3_frontend_dependencies() -> None:
@@ -100,7 +89,7 @@ def test_ai_plugin_vue3_frontend_dependencies() -> None:
     assert dependencies.npm_dev == EXPECTED_AI_VUE3_NPM_DEV_DEPENDENCIES
 
 
-@pytest.mark.parametrize('frontend_framework', ['vue2', 'vue3', 'react'])
+@pytest.mark.parametrize('frontend_framework', ['vue3'])
 def test_ai_plugin_runtime_paths_exist(frontend_framework: str) -> None:
     """校验 AI 插件后端和前端运行路径存在。"""
     plugin = PluginScanner(BACKEND_ROOT / 'plugins').load_manifest(BACKEND_ROOT / 'plugins' / 'ai' / 'plugin.yaml')
@@ -123,14 +112,13 @@ def test_ai_plugin_runtime_paths_exist(frontend_framework: str) -> None:
     assert (BACKEND_ROOT / 'plugins' / 'ai' / 'controller').is_dir()
     assert (BACKEND_ROOT / 'plugins' / 'ai' / 'entity' / 'do').is_dir()
     frontend_root = PROJECT_ROOT / 'ruoyi-fastapi-frontend' / frontend_framework / 'web'
-    suffix = '.jsx' if frontend_framework == 'react' else '.vue'
-    assert (frontend_root / 'plugins' / 'ai' / 'views' / 'model' / f'index{suffix}').is_file()
-    assert (frontend_root / 'plugins' / 'ai' / 'views' / 'chat' / f'index{suffix}').is_file()
+    assert (frontend_root / 'plugins' / 'ai' / 'views' / 'model' / 'index.vue').is_file()
+    assert (frontend_root / 'plugins' / 'ai' / 'views' / 'chat' / 'index.vue').is_file()
     assert not (frontend_root / 'src' / 'api' / 'ai').exists()
     assert not (frontend_root / 'src' / 'views' / 'ai').exists()
 
 
-@pytest.mark.parametrize('frontend_framework', ['vue2', 'vue3', 'react'])
+@pytest.mark.parametrize('frontend_framework', ['vue3'])
 def test_ai_plugin_structure_check_passes(frontend_framework: str) -> None:
     """校验 AI 插件目录满足插件结构检查。"""
     plugin = PluginScanner(BACKEND_ROOT / 'plugins').load_manifest(BACKEND_ROOT / 'plugins' / 'ai' / 'plugin.yaml')

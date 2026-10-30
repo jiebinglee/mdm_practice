@@ -266,7 +266,7 @@ ruoyi dev test tests --keyword sanitize --maxfail=1 -q
 
 ```bash
 ruoyi plugin create demo --env=dev --template=full-stack --dry-run
-ruoyi plugin create demo --env=dev --template=crud-page --frontend-framework=vue2 --dry-run
+ruoyi plugin create demo --env=dev --template=crud-page --frontend-framework=vue3 --dry-run
 ruoyi plugin check demo --env=dev
 ruoyi plugin check-deps demo --env=dev
 ruoyi plugin allowlist-example --env=dev --dry-run
@@ -281,30 +281,30 @@ ruoyi plugin test demo --env=dev
 
 `allowlist-example` 会按需生成插件依赖允许列表示例，默认输出路径为 `config/plugin_dependency_allowlist.yaml`。仓库不再默认携带 `.example` 文件；需要模板时可先 `--dry-run` 查看，也可指定 `--output-path` 写入并按团队实际批准范围调整。
 
-`plugin create` 的 `--frontend-framework` 当前固定可选 `auto`、`vue2`、`vue3`、`react`，默认值为 `auto`。显式选择 `vue2`、`vue3` 或 `react` 优先确定框架；`auto` 先采用标准目录 `ruoyi-fastapi-frontend/<framework>/{web,mobile}` 中的框架标识，独立工程再通过 `package.json` 依赖识别框架。标准目录标识不会被底层依赖覆盖；无法识别的独立工程会报错。未指定目标时，目录选择默认定位 `vue3/web`。显式传入 `--frontend-framework=vue2` 会选择 `vue2/web` 并生成 Vue2 模板，传入 `vue3` 则选择 Vue3 工程，传入 `react` 选择 React Web 并生成 `.jsx` 页面，脚手架结果使用 `frontendFramework` 记录框架标识。
+`plugin create` 的 `--frontend-framework` 当前仅可选 `auto`、`vue3`，默认值为 `auto`。显式选择 `vue3` 优先；`auto` 结合框架环境变量和显式根目录选择，标准目录 `ruoyi-fastapi-frontend/vue3/{web,mobile}` 保留目录框架身份，独立工程按已配置的框架环境变量或 `package.json` 依赖解析。标准目录身份不会被底层依赖覆盖；无法识别的独立工程会报错，非 Vue3 宿主会被拒绝。未指定目标时，目录选择默认定位 `vue3/web`；显式传入 `--frontend-framework=vue3` 会选择 Vue3 Web 并生成 `.vue` 页面，脚手架结果使用 `frontendFramework` 记录框架标识。仓库 Web 与 Mobile 工程均仅使用 Vue3；Mobile 不作为 Web 插件的宿主构建目录。
 
-当前 v1 源码前端模板提供 Vue2、Vue3 和 React 实现（React Hooks、Ant Design、ESM 测试），`auto` 解析到其他框架时，生成源码页面会明确报错，提示模板尚未支持。v2 独立模板的 `--frontend-framework` 只允许默认值 `auto`。CLI 选项的固定取值不改变底层通用框架结构。
+当前 v1 源码前端模板仅提供 Vue3 实现（Element Plus、Composition API、ESM 测试），菜单视图固定映射为 `.vue` 文件。v2 独立模板的 `--frontend-framework` 只允许默认值 `auto`。宿主仅支持 Vue3，不改变清单的通用自定义依赖分类模型。
 
-插件依赖检查、安装和测试使用当前选定的 Web 宿主。可通过 `RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue2` 切换默认框架；未设置该变量时也可使用 `RUOYI_FRONTEND_FRAMEWORK`。`RUOYI_PLUGIN_FRONTEND_ROOT`/`RUOYI_FRONTEND_ROOT` 可直接指定 Web 工程，或指定前端聚合目录后按框架定位，旧版平铺目录仍受支持。此前按版本命名的选择变量和命令选项不再提供别名，已有脚本需同步更新。
+插件依赖检查、安装和测试使用当前选定的 Vue3 Web 宿主。框架环境变量 `RUOYI_PLUGIN_FRONTEND_FRAMEWORK`（未设置时使用 `RUOYI_FRONTEND_FRAMEWORK`）仅支持 `vue3`，未配置时默认使用 Vue3。`RUOYI_PLUGIN_FRONTEND_ROOT`/`RUOYI_FRONTEND_ROOT` 可直接指定 Vue3 Web 工程，或指定前端聚合目录后定位到 `vue3/web`，旧版平铺 Vue3 目录仍受支持。此前按版本命名的选择变量和命令选项不再提供别名，已有脚本需同步更新。
 
-各框架工程共用同一个后端插件清单。前端依赖分别完整声明到 `dependencies.frontend.<framework>` 的 `npm/npmDev` 中，分类键接受 `vue2`、`vue3`、`react` 等安全的小写框架标识；检查和安装只选择当前宿主的分类，不跨分类合并。未声明目标分类时，该宿主没有 npm 依赖；旧顶层 `dependencies.npm/npmDev` 会被清单校验拒绝，需迁移到对应分类。各工程分别安装前端依赖，后端插件只需安装、启用一次。依赖分类可扩展不代表对应框架的工程或源码模板已实现。
+前端依赖完整声明到 `dependencies.frontend.vue3` 的 `npm/npmDev` 中。清单的 `dependencies.frontend.<framework>` 仍接受 `angular` 等安全的小写自定义分类键；检查和安装只选择当前 Vue3 宿主的分类，不跨分类合并。未声明目标分类时，该宿主没有 npm 依赖；旧顶层 `dependencies.npm/npmDev` 会被清单校验拒绝，需迁移到对应分类。各工程分别安装前端依赖，后端插件只需安装、启用一次。依赖分类可扩展不代表对应框架的宿主工程或源码模板已实现，也不会绕过仅支持 Vue3 的运行限制。
 
 ```powershell
-# Windows PowerShell：检查 Vue2 Web 的 AI 插件依赖
-$env:RUOYI_PLUGIN_FRONTEND_FRAMEWORK = 'vue2'
+# Windows PowerShell：检查 Vue3 Web 的 AI 插件依赖
+$env:RUOYI_PLUGIN_FRONTEND_FRAMEWORK = 'vue3'
 ruoyi plugin check-deps ai --env=dev
 ruoyi plugin install-deps ai --env=dev --dry-run
 ```
 
 ```bash
 # macOS / Linux
-RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue2 ruoyi plugin check-deps ai --env=dev
-RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue2 ruoyi plugin install-deps ai --env=dev --dry-run
+RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue3 ruoyi plugin check-deps ai --env=dev
+RUOYI_PLUGIN_FRONTEND_FRAMEWORK=vue3 ruoyi plugin install-deps ai --env=dev --dry-run
 ```
 
 `lock-deps` 会根据 `plugin.yaml` 的 Python 依赖和当前框架分类的前端依赖生成 `plugin.lock.yaml` 模板。锁文件产物保持顶层 `python/npm/npmDev` 列表，与插件清单的分类结构不同。默认模式不联网解析版本，也不生成 hash/integrity；如传入 `--offline-dir`，命令会从已有本地 wheel/tgz 反填 `resolvedVersion`、Python `hashes` 和 npm/npmDev `integrity`。该命令仍不会下载、安装或访问 registry，无法反填的项需要由人工审核或 CI 发布流水线补齐后，才能用于 `locked` 或 `offline` 策略。
 
-清单声明 `dependencies.frontend` 时，锁模板记录当前宿主的 `frontendFramework`，只锁定该框架分类的前端依赖。请为各框架分别保存锁文件，例如切换到 Vue2、Vue3 后，使用 `--output-path plugins/ai/plugin.vue2.lock.yaml`、`--output-path plugins/ai/plugin.vue3.lock.yaml` 保存，再在 `install-deps` 中通过 `--lockfile` 传入对应文件；锁文件框架与宿主不一致时会被阻断。
+清单声明 `dependencies.frontend` 时，锁模板记录当前宿主的 `frontendFramework: vue3`，只锁定该分类的前端依赖。可使用 `--output-path plugins/ai/plugin.vue3.lock.yaml` 保存，再在 `install-deps` 中通过 `--lockfile` 传入对应文件；锁文件框架与宿主不一致时会被阻断。不同 Vue3 工程如使用不同依赖版本，应分别维护锁文件。
 
 包含旧框架字段 `frontendVersion` 的锁文件会被明确拒绝，不做静默迁移，应按目标框架重新生成并审核。既没有 `frontendFramework` 也没有旧框架字段的旧锁文件，保持原有依赖项校验方式；这不代表插件清单仍接受旧顶层 npm 字段。清单中的 `compatibility.frontendVersion` 仍是前端工程的语义版本约束，保留原名，与框架标识 `frontendFramework` 不同。
 
@@ -340,7 +340,7 @@ ruoyi plugin sdk update plugin-projects/report_center --dry-run --output=json
 ruoyi plugin sdk update plugin-projects/report_center
 ```
 
-这些命令不接受 `--env`，也不读取宿主数据库配置或执行插件代码。SDK 命令的 `--frontend-framework` 当前固定可选 `auto`、`vue2`、`vue3`、`react`，默认值为 `auto`。来源默认是 `ruoyi-fastapi-frontend/vue3/web`；可用 `--frontend-framework=vue2` 选择 Vue2 Web，或用 `--frontend-framework=react` 选择 React Web，也可用 `--frontend-root PATH` 或 `RUOYI_PLUGIN_FRONTEND_ROOT` 指定工程。`auto` 跟随框架环境变量和显式根目录选择，所选 `ruoyi-fastapi-frontend/<framework>/web` 工程必须已提供对应 bridge SDK 文件。`check` 仅在版本、来源记录及文件摘要与选定宿主一致（`current`）时返回 0；过期副本、本地修改或缺少记录返回非零，适合纳入构建检查。`protocolCompatible` 只比较桥协议，不表示业务功能已经验收。
+这些命令不接受 `--env`，也不读取宿主数据库配置或执行插件代码。SDK 命令的 `--frontend-framework` 当前仅可选 `auto`、`vue3`，默认值为 `auto`。来源默认是 `ruoyi-fastapi-frontend/vue3/web`；可用 `--frontend-framework=vue3` 显式选择 Vue3 Web，也可用 `--frontend-root PATH` 或 `RUOYI_PLUGIN_FRONTEND_ROOT` 指定独立 Vue3 工程。`auto` 结合框架环境变量和显式根目录选择，最终仅接受 Vue3 宿主，所选工程必须已提供对应 bridge SDK 文件。`check` 仅在版本、来源记录及文件摘要与选定宿主一致（`current`）时返回 0；过期副本、本地修改或缺少记录返回非零，适合纳入构建检查。`protocolCompatible` 只比较桥协议，不表示业务功能已经验收。
 
 `update` 是显式写入命令，先备份再替换三个 SDK 文件。默认拒绝覆盖本地 SDK 修改或旧工程的未跟踪副本；需要纳管时先审阅 `update --force --dry-run`，再执行 `update --force`。备份位于工程 `.plugin-sdk-backups/`，业务代码保持原样。更新后应重建 bundle 并执行兼容测试；不会下载依赖、签名发布或改变运行中的插件。完整状态与摘要规则见开发手册第 16.1 节。
 

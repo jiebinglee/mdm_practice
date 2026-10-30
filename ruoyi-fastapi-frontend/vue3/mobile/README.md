@@ -18,7 +18,7 @@
 
 ## 快速开始
 
-本工程位于 `ruoyi-fastapi-frontend/vue3/mobile`，由原 `ruoyi-fastapi-app` 迁入，与同仓库 Vue2/Vue3 Web 和 Vue2 移动端共用 `ruoyi-fastapi-backend`。从仓库根目录执行：
+本工程位于 `ruoyi-fastapi-frontend/vue3/mobile`，由原 `ruoyi-fastapi-app` 迁入，与同仓库 Vue3 Web 共用 `ruoyi-fastapi-backend`。从仓库根目录执行：
 
 ```bash
 cd ruoyi-fastapi-frontend/vue3/mobile

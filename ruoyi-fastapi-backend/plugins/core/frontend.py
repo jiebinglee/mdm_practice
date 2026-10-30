@@ -24,6 +24,14 @@ def validate_frontend_framework(value: str) -> str:
     return value
 
 
+def require_supported_frontend_framework(value: str) -> FrontendFramework:
+    """限制可运行的宿主框架，不限制第三方清单的依赖分类键。"""
+    validate_frontend_framework(value)
+    if value != 'vue3':
+        raise ValueError(f'不支持前端框架 {value}，目前仅支持 vue3')
+    return value
+
+
 def resolve_frontend_framework(frontend_framework: str = 'auto') -> FrontendFramework:
     """
     解析前端工程使用的框架标识。
@@ -39,7 +47,7 @@ def resolve_frontend_framework(frontend_framework: str = 'auto') -> FrontendFram
             (os.environ[name].strip().lower() for name in FRONTEND_FRAMEWORK_ENV_NAMES if os.getenv(name, '').strip()),
             'vue3',
         )
-    return validate_frontend_framework(framework)
+    return require_supported_frontend_framework(framework)
 
 
 def resolve_frontend_framework_request(frontend_root: Path | str, requested_framework: str = 'auto') -> str:
@@ -61,7 +69,7 @@ def resolve_frontend_framework_request(frontend_root: Path | str, requested_fram
             (os.environ[name].strip().lower() for name in FRONTEND_FRAMEWORK_ENV_NAMES if os.getenv(name, '').strip()),
             'auto',
         )
-    return framework if framework == 'auto' else validate_frontend_framework(framework)
+    return framework if framework == 'auto' else require_supported_frontend_framework(framework)
 
 
 def select_frontend_root(frontend_root: Path | str, frontend_framework: str = 'auto') -> Path:
@@ -77,13 +85,13 @@ def select_frontend_root(frontend_root: Path | str, frontend_framework: str = 'a
     framework = resolve_frontend_framework(frontend_framework)
     automatic = (frontend_framework or 'auto').strip().lower() == 'auto'
     if root.name == 'web' and root.parent.parent.name == 'ruoyi-fastapi-frontend':
-        validate_frontend_framework(root.parent.name)
+        require_supported_frontend_framework(root.parent.name)
         # 显式框架选择同级工程，auto 模式保留当前指定的工程。
         return root if automatic else root.parent.parent / framework / 'web'
     if (root / 'package.json').is_file():
         return root
     if root.parent.name == 'ruoyi-fastapi-frontend':
-        validate_frontend_framework(root.name)
+        require_supported_frontend_framework(root.name)
         return root / 'web' if automatic else root.parent / framework / 'web'
     if root.name == 'ruoyi-fastapi-frontend' or (
         root.is_dir()
@@ -155,11 +163,11 @@ class PluginFrontendFrameworkResolver:
         """
         normalized_framework = (requested_framework or cls.AUTO).strip().lower()
         if normalized_framework != cls.AUTO:
-            return validate_frontend_framework(normalized_framework)
+            return require_supported_frontend_framework(normalized_framework)
 
-        # 目录标识决定标准工程的依赖分类，避免被底层 Vue 或 React 包覆盖。
+        # 标准工程只允许 Vue3，不能借助包依赖覆盖目录身份。
         if frontend_root.name in {'web', 'mobile'} and frontend_root.parent.parent.name == 'ruoyi-fastapi-frontend':
-            return validate_frontend_framework(frontend_root.parent.name)
+            return require_supported_frontend_framework(frontend_root.parent.name)
 
         package_json_path = frontend_root / 'package.json'
         if package_json_path.is_file():
@@ -173,13 +181,11 @@ class PluginFrontendFrameworkResolver:
             dependencies = cls._collect_dependencies(package_payload)
             vue_version = cls._resolve_vue_dependency(dependencies.get('vue'))
             if vue_version is not None:
-                return vue_version
-            if 'element-ui' in dependencies:
-                return 'vue2'
+                return require_supported_frontend_framework(vue_version)
+            if 'element-ui' in dependencies or 'react' in dependencies:
+                raise ValueError('不支持该前端工程，目前仅支持 vue3')
             if 'element-plus' in dependencies:
                 return 'vue3'
-            if 'react' in dependencies:
-                return 'react'
 
         raise ValueError(f'无法从 {package_json_path} 识别前端框架，请使用 --frontend-framework 显式指定')
 

@@ -40,18 +40,19 @@ def test_nested_container_never_becomes_a_project_root(tmp_path: Path) -> None:
     for version in ('vue2', 'vue3'):
         (root / version / 'web').mkdir(parents=True)
     assert resolve_frontend_root(tmp_path / 'ruoyi-fastapi-backend') == root / 'vue3/web'
-    assert resolve_frontend_root(tmp_path / 'ruoyi-fastapi-backend', frontend_framework='vue2') == root / 'vue2/web'
-    assert select_frontend_root(root, 'vue2') == root / 'vue2/web'
+    with pytest.raises(ValueError, match='仅支持 vue3'):
+        select_frontend_root(root, 'vue2')
 
 
-def test_framework_environment_selects_vue2_and_explicit_argument_wins(
+def test_unsupported_framework_environment_is_rejected_and_explicit_argument_wins(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """校验框架环境变量可以选择 Vue 2，且显式参数优先。"""
+    """旧框架环境变量明确报错，显式 Vue3 参数仍具有优先级。"""
     monkeypatch.setenv('RUOYI_PLUGIN_FRONTEND_FRAMEWORK', 'vue2')
     backend = tmp_path / 'ruoyi-fastapi-backend'
-    assert resolve_frontend_root(backend) == tmp_path / 'ruoyi-fastapi-frontend/vue2/web'
+    with pytest.raises(ValueError, match='仅支持 vue3'):
+        resolve_frontend_root(backend)
     assert resolve_frontend_root(backend, frontend_framework='vue3') == tmp_path / 'ruoyi-fastapi-frontend/vue3/web'
 
 
@@ -60,18 +61,18 @@ def test_explicit_project_and_container_environment(tmp_path: Path, monkeypatch:
     container = tmp_path / 'ruoyi-fastapi-frontend'
     explicit = tmp_path / 'custom-web'
     monkeypatch.setenv('RUOYI_PLUGIN_FRONTEND_ROOT', str(container))
-    monkeypatch.setenv('RUOYI_PLUGIN_FRONTEND_FRAMEWORK', 'vue2')
-    assert resolve_frontend_root(tmp_path / 'backend') == container / 'vue2/web'
+    monkeypatch.setenv('RUOYI_PLUGIN_FRONTEND_FRAMEWORK', 'vue3')
+    assert resolve_frontend_root(tmp_path / 'backend') == container / 'vue3/web'
     assert resolve_frontend_root(tmp_path / 'backend', explicit) == explicit
     assert select_frontend_root(container / 'vue3/web') == container / 'vue3/web'
-    assert select_frontend_root(container / 'vue3/web', 'vue2') == container / 'vue2/web'
+    assert select_frontend_root(container / 'vue3/web', 'vue3') == container / 'vue3/web'
 
 
 def test_legacy_flat_frontend_is_retained(tmp_path: Path) -> None:
     """校验原有平铺前端工程目录仍可正常解析。"""
     frontend = tmp_path / 'ruoyi-fastapi-frontend'
     frontend.mkdir()
-    (frontend / 'package.json').write_text('{"dependencies":{"vue":"^2.7.16"}}', encoding='utf-8')
+    (frontend / 'package.json').write_text('{"dependencies":{"vue":"^3.5.26"}}', encoding='utf-8')
     assert resolve_frontend_root(tmp_path / 'ruoyi-fastapi-backend') == frontend
 
 
@@ -82,15 +83,17 @@ def test_invalid_framework_cannot_be_used_as_a_path(tmp_path: Path, framework: s
         resolve_frontend_root(tmp_path / 'backend', frontend_framework=framework)
 
 
-@pytest.mark.parametrize('framework', ['react', 'react18', 'custom_ui-1'])
-def test_generic_framework_can_select_a_workspace(tmp_path: Path, framework: str) -> None:
-    """校验标准目录能选择合法的扩展框架而无需预先创建工程。"""
+@pytest.mark.parametrize('framework', ['vue2', 'react', 'react18', 'custom_ui-1'])
+def test_unsupported_framework_cannot_select_a_workspace(tmp_path: Path, framework: str) -> None:
+    """合法分类标识不代表仓库支持该运行宿主。"""
     container = tmp_path / 'ruoyi-fastapi-frontend'
-    expected = container / framework / 'web'
-    assert resolve_frontend_root(tmp_path / 'backend', frontend_framework=framework) == expected
-    assert select_frontend_root(container, framework) == expected
-    assert select_frontend_root(container / 'vue3/web', framework) == expected
-    assert select_frontend_root(container / framework) == expected
+    assert validate_frontend_framework(framework) == framework
+    with pytest.raises(ValueError, match='仅支持 vue3'):
+        resolve_frontend_root(tmp_path / 'backend', frontend_framework=framework)
+    with pytest.raises(ValueError, match='仅支持 vue3'):
+        select_frontend_root(container / framework)
+    with pytest.raises(ValueError, match='仅支持 vue3'):
+        select_frontend_root(container / framework / 'web')
 
 
 def test_framework_environment_priority_and_old_names_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,10 +102,11 @@ def test_framework_environment_priority_and_old_names_are_ignored(monkeypatch: p
     monkeypatch.setenv('RUOYI_FRONTEND_VERSION', 'vue2')
     assert resolve_frontend_framework() == 'vue3'
     monkeypatch.setenv('RUOYI_FRONTEND_FRAMEWORK', 'react')
-    assert resolve_frontend_framework() == 'react'
-    monkeypatch.setenv('RUOYI_PLUGIN_FRONTEND_FRAMEWORK', 'custom_ui-1')
-    assert resolve_frontend_framework() == 'custom_ui-1'
-    assert resolve_frontend_framework('vue2') == 'vue2'
+    with pytest.raises(ValueError, match='仅支持 vue3'):
+        resolve_frontend_framework()
+    monkeypatch.setenv('RUOYI_PLUGIN_FRONTEND_FRAMEWORK', 'vue3')
+    assert resolve_frontend_framework() == 'vue3'
+    assert resolve_frontend_framework('vue3') == 'vue3'
 
 
 @pytest.mark.parametrize('framework', ['auto', 'Vue3', '', 'react.next', '../react', 'react/web'])
@@ -121,26 +125,31 @@ def test_standard_directory_identity_wins_over_package_dependencies(
     frontend = tmp_path / 'ruoyi-fastapi-frontend' / framework / platform
     frontend.mkdir(parents=True)
     (frontend / 'package.json').write_text('{"dependencies":{"vue":"^3.5.26"}}', encoding='utf-8')
-    assert PluginFrontendFrameworkResolver.resolve(frontend) == framework
-    assert PluginFrontendFrameworkResolver.resolve(frontend, 'react') == 'react'
+    with pytest.raises(ValueError, match='仅支持 vue3'):
+        PluginFrontendFrameworkResolver.resolve(frontend)
+    assert PluginFrontendFrameworkResolver.resolve(frontend, 'vue3') == 'vue3'
 
 
 @pytest.mark.parametrize(
     ('package', 'framework'),
     [
-        ({'dependencies': {'vue': '^2.7.16'}}, 'vue2'),
         ({'devDependencies': {'vue': '~3.5.26'}}, 'vue3'),
-        ({'dependencies': {'element-ui': '^2.15.14'}}, 'vue2'),
         ({'dependencies': {'element-plus': '^2.11.5'}}, 'vue3'),
-        ({'dependencies': {'react': '^19.0.0'}}, 'react'),
     ],
 )
 def test_independent_project_detects_framework_from_package(
     tmp_path: Path, package: dict[str, dict[str, str]], framework: str
 ) -> None:
-    """校验独立前端工程从已声明依赖中识别 Vue 或 React。"""
+    """校验独立 Vue3 工程从已声明依赖中识别框架。"""
     (tmp_path / 'package.json').write_text(json.dumps(package), encoding='utf-8')
     assert PluginFrontendFrameworkResolver.resolve(tmp_path) == framework
+
+
+@pytest.mark.parametrize('dependencies', [{'vue': '^2.7.16'}, {'element-ui': '^2.15.14'}, {'react': '^19.0.0'}])
+def test_independent_legacy_project_is_rejected(tmp_path: Path, dependencies: dict[str, str]) -> None:
+    (tmp_path / 'package.json').write_text(json.dumps({'dependencies': dependencies}), encoding='utf-8')
+    with pytest.raises(ValueError, match='仅支持 vue3'):
+        PluginFrontendFrameworkResolver.resolve(tmp_path)
 
 
 def test_unknown_independent_project_requires_explicit_framework(tmp_path: Path) -> None:
@@ -148,4 +157,4 @@ def test_unknown_independent_project_requires_explicit_framework(tmp_path: Path)
     (tmp_path / 'package.json').write_text('{"dependencies":{"custom-lib":"^1.0.0"}}', encoding='utf-8')
     with pytest.raises(ValueError, match='--frontend-framework'):
         PluginFrontendFrameworkResolver.resolve(tmp_path)
-    assert PluginFrontendFrameworkResolver.resolve(tmp_path, 'custom_ui-1') == 'custom_ui-1'
+    assert PluginFrontendFrameworkResolver.resolve(tmp_path, 'vue3') == 'vue3'

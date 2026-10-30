@@ -190,13 +190,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        framework: ${{ fromJSON(inputs.network_frameworks) }}
+        framework: ['vue3']
     defaults:
       run:
         working-directory: ruoyi-fastapi-backend
     env:
       RUOYI_PLUGIN_NETWORK_SMOKE: '1'
-      RUOYI_PLUGIN_FRONTEND_FRAMEWORK: ${{ matrix.framework }}
+      RUOYI_PLUGIN_FRONTEND_FRAMEWORK: vue3
       DB_SOURCES: '{"primary":{"db_type":"mysql","db_host":"127.0.0.1","db_port":3306,"db_username":"network-smoke","db_password":"network-smoke","db_database":"network-smoke"}}'
       JWT_SECRET_KEY: isolated-plugin-network-smoke-ci-only
     steps:
@@ -211,18 +211,18 @@ jobs:
           node-version: '22'
       - uses: pnpm/action-setup@v5
         with:
-          package_json_file: ruoyi-fastapi-frontend/${{ matrix.framework }}/web/package.json
+          package_json_file: ruoyi-fastapi-frontend/vue3/web/package.json
       - name: Locate the pnpm store
         id: pnpm-store
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v5
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ runner.os }}-network-${{ matrix.framework }}-${{ hashFiles(format('ruoyi-fastapi-frontend/{0}/web/pnpm-lock.yaml', matrix.framework)) }}
+          key: ${{ runner.os }}-network-vue3-${{ hashFiles('ruoyi-fastapi-frontend/vue3/web/pnpm-lock.yaml') }}
       - run: python -m pip install -r requirements.txt -r requirements-test.txt playwright==1.64.0
       - run: python -m playwright install --with-deps chromium
       - name: Install Web dependencies
-        working-directory: ruoyi-fastapi-frontend/${{ matrix.framework }}/web
+        working-directory: ruoyi-fastapi-frontend/vue3/web
         run: pnpm install --frozen-lockfile
       - name: Verify HTTPS proxy, iframe sessions and long connections
         run: python -m pytest tests/plugins/integration/test_network_smoke.py -m browser --strict-markers -v --junitxml=target/plugin-network-smoke/${{ matrix.framework }}/results.xml
